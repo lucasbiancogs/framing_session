@@ -1,0 +1,83 @@
+---
+description: Phase 4 — Flutter Local State & Canvas
+---
+
+# Phase 4 — Flutter Local State & Canvas
+
+## Context (Standalone)
+
+Assume:
+- Supabase project exists with tables
+- No realtime listeners exist yet in Flutter
+
+## Learning Goals
+
+- Separate local state from shared state
+- Prepare Flutter architecture for realtime without coupling
+- Build UI that can work offline first
+
+## What Is Done (By Assistant)
+
+- Canvas screen with static shape rendering
+- Session list/selection screen
+- Basic state management setup
+
+## What Is NOT Done
+
+- No Supabase integration in this phase
+- No live updates
+- No realtime subscriptions
+
+## Files That May Be Touched
+
+- `flutter/lib/ui/` — Canvas and session screens
+- `flutter/lib/features/` — Feature modules
+- `flutter/lib/data/` — Models only (no repositories yet)
+
+## Key Concepts
+
+### State Boundaries
+
+```
+┌─────────────────────────────────────────────────┐
+│                  Local State                     │
+│  - Current tool selected                         │
+│  - Zoom level                                    │
+│  - Pan offset                                    │
+│  - Selection state                               │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│                 Shared State                     │
+│  - Shapes (from database)                        │
+│  - Connected users (from presence)               │
+│  - Other cursors (from broadcast)                │
+└─────────────────────────────────────────────────┘
+```
+
+### Architecture Principle
+
+UI should not know WHERE data comes from. Build interfaces that could be:
+- Backed by local mock data (this phase)
+- Backed by Supabase (later phases)
+
+### Canvas Rendering Pattern
+
+```dart
+class CanvasState {
+  final List<Shape> shapes;
+  final Offset panOffset;
+  final double zoom;
+  // ...
+}
+```
+
+## TODOs (For User)
+
+- [ ] Decide what belongs in local vs shared state
+- [ ] Sketch data flow diagram (local → UI, remote → UI)
+- [ ] Identify which UI updates need to be real-time
+
+---
+
+**⛔ STOP — Do not proceed to Phase 5 unless explicitly prompted.**

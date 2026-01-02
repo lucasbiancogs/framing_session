@@ -1,0 +1,106 @@
+---
+description: Phase 5 — Presence
+---
+
+# Phase 5 — Presence
+
+## Context (Standalone)
+
+Assume:
+- Sessions table exists
+- Flutter canvas exists
+- Users are anonymous (no auth yet)
+
+## Learning Goals
+
+- Understand presence vs persistence
+- Track who is currently connected
+- Handle join/leave events cleanly
+
+## What Is Done (By Assistant)
+
+- Presence concept explained with examples
+- Example presence channel setup
+- Payload structure documented
+
+## What Is NOT Done
+
+- No UI implementation (you build the user list)
+- No cursor position in presence (that's Broadcast)
+
+## Files That May Be Touched
+
+- `supabase/realtime/presence.md`
+
+## Key Concepts
+
+### What Presence Tracks
+
+Each connected user shares their state:
+
+```dart
+final channel = supabase.channel('session:$sessionId');
+
+channel.onPresenceSync((payload) {
+  // Full state of all connected users
+});
+
+channel.onPresenceJoin((payload) {
+  // A new user connected
+});
+
+channel.onPresenceLeave((payload) {
+  // A user disconnected
+});
+
+await channel.subscribe((status, error) async {
+  if (status == RealtimeSubscribeStatus.subscribed) {
+    await channel.track({
+      'user_id': myUserId,
+      'name': 'Alice',
+      'color': '#FF5733',
+    });
+  }
+});
+```
+
+### Presence State Example
+
+```json
+{
+  "user_abc": {
+    "user_id": "abc",
+    "name": "Alice",
+    "color": "#FF5733",
+    "online_at": "2024-01-15T10:30:00Z"
+  },
+  "user_xyz": {
+    "user_id": "xyz",
+    "name": "Bob", 
+    "color": "#33FF57",
+    "online_at": "2024-01-15T10:31:00Z"
+  }
+}
+```
+
+### Key Characteristics
+
+- **Ephemeral**: State is gone when user disconnects
+- **Automatic cleanup**: No manual removal needed
+- **Sync on join**: New subscribers get current state immediately
+
+### What NOT to Put in Presence
+
+- Cursor positions (too frequent, use Broadcast)
+- Persistent data (use Database)
+- Large payloads (presence syncs to everyone)
+
+## TODOs (For User)
+
+- [ ] Display connected users in the UI
+- [ ] Handle join/leave events gracefully
+- [ ] Decide what user metadata to track
+
+---
+
+**⛔ STOP — Do not proceed to Phase 6 unless explicitly prompted.**

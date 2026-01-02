@@ -1,0 +1,55 @@
+---
+description: Phase 0 — Mental Model & Realtime Taxonomy
+---
+
+# Phase 0 — Mental Model & Realtime Taxonomy
+
+## Context (Standalone)
+
+You are starting with zero Supabase code.
+This phase is about understanding what tools exist and why.
+
+## Learning Goals
+
+- Understand the difference between:
+  - Database realtime (CDC)
+  - Presence
+  - Broadcast
+- Know which problems each tool solves
+- Avoid common misuse early
+
+## Concepts Covered
+
+- Source of truth vs transient state
+- Why realtime ≠ syncing everything
+- Whiteboard as a distributed system
+
+## What Is Done (By Assistant)
+
+- Written explanations only
+- Diagrams or flows in markdown
+- Mental model documentation
+
+## What Is NOT Done
+
+- No Flutter code
+- No Supabase project creation
+- No SQL
+
+## Files That May Be Touched
+
+- `README.md`
+- `supabase/notes/concepts.md`
+
+## TODOs (For User)
+
+- [ ] Write a one-paragraph explanation for each realtime tool
+- [ ] Decide which tool fits:
+  - Shape creation → ?
+  - Cursor movement → ?
+  - User list → ?
+- [ ] Draw your own data flow diagram
+
+---
+
+**⛔ STOP — Do not proceed to Phase 1 unless explicitly prompted.**

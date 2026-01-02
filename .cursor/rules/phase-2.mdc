@@ -1,0 +1,73 @@
+---
+description: Phase 2 — Tables & Data Modeling
+---
+
+# Phase 2 — Tables & Data Modeling (Example Only)
+
+## Context (Standalone)
+
+Assume:
+- Supabase project exists
+- Flutter exists but is unused in this phase
+
+## Learning Goals
+
+- Learn how to design tables for realtime apps
+- Understand normalization vs JSON columns
+- Learn what NOT to store in a table
+
+## What Is Done (By Assistant)
+
+- Create ONE table only: `sessions`
+- Explain:
+  - Primary key choice (UUID vs serial)
+  - Column design decisions
+  - Future relationships
+
+## What Is NOT Done
+
+- No `shapes` table (you design it)
+- No `connections` table
+- No Flutter integration
+
+## Files That May Be Touched
+
+- `supabase/schema/sessions.sql`
+- `supabase/README.md`
+
+## Key Concepts
+
+### Table Design for Realtime
+
+When a table has realtime enabled, every INSERT/UPDATE/DELETE is broadcast. Consider:
+
+- **Column granularity**: Updating one field broadcasts the whole row
+- **JSON vs columns**: JSON is flexible but harder to query/index
+- **Normalization**: More tables = more targeted updates
+
+### Example: Sessions Table
+
+```sql
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Questions to Ask Yourself
+
+1. What gets updated frequently vs rarely?
+2. Do I need to query individual fields?
+3. Will this table be realtime-enabled?
+
+## TODOs (For User)
+
+- [ ] Design the `shapes` table
+- [ ] Decide: column vs JSON for shape properties
+- [ ] Justify each decision in writing
+
+---
+
+**⛔ STOP — Do not proceed to Phase 3 unless explicitly prompted.**

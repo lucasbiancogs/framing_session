@@ -1,0 +1,62 @@
+---
+description: Phase 1 — Project & Environment Setup
+---
+
+# Phase 1 — Project & Environment Setup
+
+## Context (Standalone)
+
+Assume:
+- No Supabase project exists
+- No Flutter project exists
+
+## Learning Goals
+
+- Understand how Flutter and Supabase connect
+- Learn environment variable handling
+- Avoid setup-level mistakes
+
+## What Is Done (By Assistant)
+
+- Flutter project initialized
+- Supabase project created (instructions)
+- Supabase Flutter SDK added
+- Environment variables explained
+
+## What Is NOT Done
+
+- No database tables
+- No realtime subscriptions
+- No UI logic tied to Supabase
+
+## Files That May Be Touched
+
+- `flutter/` — Project initialization
+- `flutter/README.md`
+- `supabase/README.md`
+
+## Key Concepts
+
+### Environment Variables
+
+```dart
+// Never hardcode in production
+final supabase = Supabase.initialize(
+  url: 'YOUR_SUPABASE_URL',
+  anonKey: 'YOUR_ANON_KEY',
+);
+```
+
+### Why Anon Key Is Dangerous
+
+The anon key is public and embedded in client apps. Without Row Level Security (RLS), anyone with this key can read/write your entire database.
+
+## TODOs (For User)
+
+- [ ] Verify Supabase client initializes
+- [ ] Break setup intentionally and fix it
+- [ ] Explain why anon key is dangerous in prod
+
+---
+
+**⛔ STOP — Do not proceed to Phase 2 unless explicitly prompted.**

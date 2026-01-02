@@ -1,0 +1,80 @@
+---
+description: Phase 3 — Database Realtime (CDC)
+---
+
+# Phase 3 — Database Realtime (CDC)
+
+## Context (Standalone)
+
+Assume:
+- One table exists: `sessions`
+- Flutter project exists but has no realtime listeners
+
+## Learning Goals
+
+- Understand how database realtime (Change Data Capture) works
+- Know when CDC is appropriate
+- Recognize performance implications
+
+## What Is Done (By Assistant)
+
+- Enable realtime on `sessions` table
+- Show one INSERT/UPDATE subscription example
+- Explain emitted payloads
+
+## What Is NOT Done
+
+- No Flutter listeners (Supabase-side only)
+- No shapes realtime (you do it)
+
+## Files That May Be Touched
+
+- `supabase/realtime/README.md` (new file)
+- `supabase/schema/sessions.sql` (realtime config)
+
+## Key Concepts
+
+### Enabling Realtime
+
+```sql
+-- Enable realtime for a table
+ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
+```
+
+### Payload Structure
+
+When a row changes, Supabase emits:
+
+```json
+{
+  "type": "INSERT",
+  "table": "sessions",
+  "schema": "public",
+  "record": { "id": "...", "name": "..." },
+  "old_record": null
+}
+```
+
+### Event Types
+
+| Event    | Trigger               |
+|----------|-----------------------|
+| INSERT   | New row created       |
+| UPDATE   | Existing row modified |
+| DELETE   | Row removed           |
+
+### Performance Considerations
+
+- Every subscribed client receives every change
+- Large payloads = more bandwidth
+- High-frequency updates = consider Broadcast instead
+
+## TODOs (For User)
+
+- [ ] Enable realtime on `shapes` table
+- [ ] Decide which UPDATE events actually matter
+- [ ] Identify potentially noisy events
+
+---
+
+**⛔ STOP — Do not proceed to Phase 4 unless explicitly prompted.**

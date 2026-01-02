@@ -1,0 +1,175 @@
+---
+description: Global rules for the Supabase Realtime learning project
+globs: *
+---
+
+# Framing Session — Global Context
+
+## Project Purpose
+
+This is a **learning project** for building a collaborative whiteboard application using:
+
+- **Flutter** — Mobile/web client
+- **Supabase Realtime** — Backend realtime infrastructure
+
+The goal is to deeply understand Supabase's three realtime tools by building one feature at a time.
+
+---
+
+## The Whiteboard Domain
+
+We're modeling a collaborative whiteboard where multiple users can:
+
+- Create and edit shapes (rectangles, circles, lines)
+- See each other's cursors moving in real-time
+- Know who else is currently viewing the board
+
+---
+
+## How Everything Is Modeled
+
+### The Three Realtime Tools
+
+| Tool                        | What It Does                  | Persistence              | Source of Truth     |
+|-----------------------------|-------------------------------|--------------------------|---------------------|
+| **Database Realtime (CDC)** | Streams database changes      | Permanent (Postgres)     | The database        |
+| **Presence**                | Tracks connected users        | Ephemeral (memory only)  | Channel state       |
+| **Broadcast**               | Fire-and-forget messages      | None                     | None                |
+
+### Feature-to-Tool Mapping
+
+| Whiteboard Feature       | Realtime Tool  | Why This Tool                                      |
+|--------------------------|----------------|----------------------------------------------------|
+| **Shape creation**       | Database CDC   | Shapes must persist — refresh should show them     |
+| **Shape property edits** | Database CDC   | Changes must be permanent and queryable            |
+| **Session metadata**     | Database CDC   | Session info survives reconnection                 |
+| **User list (online)**   | Presence       | Only care about who's connected NOW                |
+| **User colors/names**    | Presence       | Tied to connection lifetime, auto-cleanup          |
+| **Cursor movement**      | Broadcast      | 30-60 updates/sec, missing one is fine             |
+| **Drawing in progress**  | Broadcast      | Transient visual feedback, no persistence needed   |
+
+### The Critical Question
+
+> **"What happens if a client reconnects after missing updates?"**
+
+| Tool             | Answer                                           |
+|------------------|--------------------------------------------------|
+| **Database CDC** | Client queries the database — all data is there  |
+| **Presence**     | Client receives `sync` event with current state  |
+| **Broadcast**    | Client missed the messages — they're gone        |
+
+---
+
+## Repository Structure
+
+```
+/
+├── README.md
+├── PHASES.md              ← Progress tracking only
+│
+├── .cursor/rules/         ← This folder
+│   ├── global.mdc         ← Always active
+│   └── phase-*.mdc        ← Manually activated per phase
+│
+├── supabase/
+│   ├── README.md
+│   ├── schema/            ← SQL table definitions
+│   │   └── sessions.sql
+│   ├── realtime/          ← Realtime documentation
+│   │   ├── presence.md
+│   │   └── broadcast.md
+│   └── notes/
+│       └── concepts.md    ← Core mental model
+│
+└── flutter/
+    ├── README.md
+    └── lib/
+        ├── app/           ← App configuration, routing
+        ├── features/      ← Feature modules
+        ├── data/          ← Repositories, models
+        └── ui/            ← Shared UI components
+```
+
+---
+
+## Global Rules
+
+### 1. Phases Are Isolated
+
+Each phase is self-contained. Do not assume previous phases were completed.
+Every phase must restate:
+- Goal
+- Concepts
+- Assumptions
+
+### 2. No Automatic Progression
+
+The next phase only begins when I explicitly prompt it.
+Never suggest moving to the next phase.
+
+### 3. README-First
+
+Every phase produces:
+- A README section or documentation update
+- A checklist of TODOs for me to complete
+
+### 4. Example, Not Completion
+
+Provide ONE correct pattern per phase.
+I finish the rest myself.
+
+### 5. Folder Separation Is Mandatory
+
+- **Flutter ≠ Supabase**
+- Backend concepts must NEVER be buried in UI code
+- Data layer concerns stay in `data/`
+- UI concerns stay in `ui/`
+- Supabase configuration and concepts stay in `supabase/`
+
+### 6. No Over-Engineering
+
+- Only implement what the current phase requires
+- No "while we're here" additions
+- No premature abstractions
+
+---
+
+## Common Mistakes to Avoid
+
+### Using Database for High-Frequency Updates
+
+```
+❌ INSERT INTO cursor_positions (user_id, x, y) VALUES (...)
+```
+
+Cursors update 30-60 times/second. Database will choke.
+Use **Broadcast** instead.
+
+### Using Broadcast for Persistent Data
+
+```
+❌ channel.send({ type: 'shape_created', shape: {...} })
+```
+
+If a client joins late, they never see the shape.
+Use **Database CDC** instead.
+
+### Using Database for "Who's Online"
+
+```
+❌ UPDATE users SET is_online = true WHERE id = ...
+```
+
+Complex, unreliable, doesn't handle crashes.
+Use **Presence** instead — automatic cleanup on disconnect.
+
+---
+
+## How to Use Phase Rules
+
+When starting a new phase:
+
+1. Tell the assistant: "I'm starting Phase N"
+2. Or reference the rule: "Apply phase-N rules"
+
+Phase rules are in `.cursor/rules/phase-*.mdc`

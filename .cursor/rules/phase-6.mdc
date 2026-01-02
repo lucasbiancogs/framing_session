@@ -1,0 +1,124 @@
+---
+description: Phase 6 — Broadcast
+---
+
+# Phase 6 — Broadcast
+
+## Context (Standalone)
+
+Assume:
+- Users are connected to a session
+- Presence is working (you know who's online)
+- Cursors need to be shared
+
+## Learning Goals
+
+- Learn ephemeral messaging patterns
+- Avoid database abuse for high-frequency updates
+- Handle missed messages gracefully
+
+## What Is Done (By Assistant)
+
+- One broadcast example (cursor movement)
+- Payload design explained
+- Error handling patterns
+
+## What Is NOT Done
+
+- No cursor rendering in UI (you build it)
+- No interpolation/smoothing (optimization)
+
+## Files That May Be Touched
+
+- `supabase/realtime/broadcast.md`
+
+## Key Concepts
+
+### Sending a Broadcast
+
+```dart
+final channel = supabase.channel('session:$sessionId');
+
+// Send cursor position
+channel.sendBroadcastMessage(
+  event: 'cursor',
+  payload: {
+    'user_id': myUserId,
+    'x': cursorX,
+    'y': cursorY,
+    'timestamp': DateTime.now().millisecondsSinceEpoch,
+  },
+);
+```
+
+### Receiving Broadcasts
+
+```dart
+channel.onBroadcast(
+  event: 'cursor',
+  callback: (payload) {
+    final userId = payload['user_id'];
+    final x = payload['x'];
+    final y = payload['y'];
+    // Update cursor position for this user
+  },
+);
+```
+
+### Payload Design
+
+Keep payloads small — they're sent frequently:
+
+```json
+{
+  "user_id": "abc",
+  "x": 450,
+  "y": 320,
+  "t": 1705312200000
+}
+```
+
+### Key Characteristics
+
+- **No persistence**: Messages are not stored
+- **No delivery guarantee**: Offline clients miss them
+- **No acknowledgment**: Fire and forget
+- **High frequency safe**: No database load
+
+### Handling Dropped Messages
+
+```dart
+// Stale cursor detection
+if (DateTime.now().millisecondsSinceEpoch - payload['t'] > 5000) {
+  // Message is too old, ignore it
+  return;
+}
+```
+
+### Throttling Sends
+
+```dart
+// Don't send on every mouse move
+Timer? _throttle;
+
+void onCursorMove(double x, double y) {
+  _throttle?.cancel();
+  _throttle = Timer(Duration(milliseconds: 16), () {
+    channel.sendBroadcastMessage(
+      event: 'cursor',
+      payload: {'x': x, 'y': y, ...},
+    );
+  });
+}
+```
+
+## TODOs (For User)
+
+- [ ] Broadcast cursor movement
+- [ ] Render other users' cursors
+- [ ] Handle stale/dropped messages safely
+- [ ] Implement throttling
+
+---
+
+**⛔ STOP — Do not proceed to Phase 7 unless explicitly prompted.**
