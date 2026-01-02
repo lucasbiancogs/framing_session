@@ -1,0 +1,1 @@
+create type shape_type as enum ('rectangle', 'circle', 'triangle', 'text');

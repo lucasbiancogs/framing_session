@@ -8,7 +8,7 @@ Track your progress through the Supabase Realtime learning phases.
 |-------|------------------------------|--------|----------------|
 | 0     | Mental Model & Taxonomy      | [x]    | 2025-12-30     |
 | 1     | Project & Environment Setup  | [x]    | 2026-01-02     |
-| 2     | Tables & Data Modeling       | [ ]    |                |
+| 2     | Tables & Data Modeling       | [x]    | 2026-01-02     |
 | 3     | Database Realtime (CDC)      | [ ]    |                |
 | 4     | Flutter Local State & Canvas | [ ]    |                |
 | 5     | Presence                     | [ ]    |                |
@@ -75,9 +75,9 @@ Phase-specific rules are in `.cursor/rules/phase-N.mdc`.
 ## Phase 2 — Tables & Data Modeling
 
 - [x] Run `supabase/schema/sessions.sql` in Supabase SQL Editor
-- [ ] Design the `shapes` table
-- [ ] Decide: columns vs JSON for shape properties (width, height, x, y, color, rotation)
-- [ ] Justify each design decision in comments
+- [x] Design the `shapes` table
+- [x] Decide: columns vs JSON for shape properties (width, height, x, y, color, rotation)
+- [x] Justify each design decision in comments
 
 **Questions to answer in your design:**
 
