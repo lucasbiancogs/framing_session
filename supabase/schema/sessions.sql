@@ -69,3 +69,18 @@ ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 --   ON sessions FOR INSERT
 --   WITH CHECK (true);
 
+-- =============================================================================
+-- REALTIME — Phase 3
+-- =============================================================================
+-- Enable realtime for this table. This adds the table to the supabase_realtime
+-- publication, which means any INSERT, UPDATE, or DELETE will be broadcast
+-- to all subscribed clients.
+--
+-- Trade-offs:
+-- - Every change is sent to every subscriber (no row-level filtering by default)
+-- - Large tables with frequent updates = more bandwidth
+-- - Good for: shapes, sessions (persistent data that clients need to sync)
+-- - Bad for: cursor positions, typing indicators (use Broadcast instead)
+
+ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
+

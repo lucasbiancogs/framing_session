@@ -91,6 +91,27 @@ Phase-specific rules are in `.cursor/rules/phase-N.mdc`.
 
 ---
 
+## Phase 3 — Database Realtime (CDC)
+
+- [x] Run the realtime SQL in Supabase SQL Editor:
+  ```sql
+  ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
+  ```
+- [x] Enable realtime on the `shapes` table (same pattern as sessions)
+- [x] Test with the Supabase Dashboard:
+  1. Go to Table Editor → sessions
+  2. Open browser DevTools → Network → WS tab
+  3. Insert a row manually
+  4. Observe the realtime payload in the WebSocket connection
+- [x] Answer: Which UPDATE events on shapes actually matter?
+  - Position changes (x, y)?
+  - Size changes (width, height)?
+  - Color changes?
+  - Which ones happen frequently enough to consider Broadcast instead?
+- [x] Identify potentially "noisy" events (changes that fire too often)
+
+---
+
 ## Rules Location
 
 ```

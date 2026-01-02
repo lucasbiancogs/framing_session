@@ -28,3 +28,5 @@ COMMENT ON COLUMN shapes.created_at IS 'When the shape was created';
 COMMENT ON COLUMN shapes.updated_at IS 'When the shape was last updated';
 
 ALTER TABLE shapes ENABLE ROW LEVEL SECURITY;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE shapes;
