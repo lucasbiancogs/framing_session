@@ -6,8 +6,8 @@ Track your progress through the Supabase Realtime learning phases.
 
 | Phase | Name                         | Status | Completed Date |
 |-------|------------------------------|--------|----------------|
-| 0     | Mental Model & Taxonomy      | [ ]    |                |
-| 1     | Project & Environment Setup  | [ ]    |                |
+| 0     | Mental Model & Taxonomy      | [x]    | 2025-12-30     |
+| 1     | Project & Environment Setup  | [x]    | 2026-01-02     |
 | 2     | Tables & Data Modeling       | [ ]    |                |
 | 3     | Database Realtime (CDC)      | [ ]    |                |
 | 4     | Flutter Local State & Canvas | [ ]    |                |

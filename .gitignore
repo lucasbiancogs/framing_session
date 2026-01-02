@@ -1,0 +1,6 @@
+# VS Code - launch.json contains credentials
+.vscode/launch.json
+
+# macOS
+.DS_Store
+
