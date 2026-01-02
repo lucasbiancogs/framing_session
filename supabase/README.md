@@ -70,6 +70,82 @@ The **service_role key** is **secret** and should NEVER be in client code. It by
 
 ---
 
+## Phase 2 — Tables & Data Modeling
+
+### Key Questions When Designing for Realtime
+
+Before creating any table, ask yourself:
+
+1. **What gets updated frequently vs rarely?**
+   - Frequent updates = consider splitting into separate tables
+   - Rare updates = can keep in same table
+
+2. **Do I need to query individual fields?**
+   - Yes → use explicit columns
+   - No, and schema varies → consider JSONB
+
+3. **Will this table be realtime-enabled?**
+   - Yes → every row change broadcasts the entire row
+   - Consider the payload size
+
+### The Sessions Table
+
+See `schema/sessions.sql` for the complete definition with comments.
+
+**Summary:**
+
+```sql
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Why UUID?**
+- Generated client-side (no round-trip needed)
+- No information leakage (can't guess IDs)
+- Works in distributed/offline scenarios
+
+**Why explicit columns (not JSON)?**
+- `name` is queryable, sortable, indexable
+- Schema is stable — sessions always have these fields
+
+### Running the SQL
+
+In the Supabase Dashboard:
+
+1. Go to **SQL Editor**
+2. Paste the contents of `schema/sessions.sql`
+3. Click **Run**
+
+Or via CLI:
+
+```bash
+psql "postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres" \
+  -f supabase/schema/sessions.sql
+```
+
+### Phase 2 TODOs
+
+- [ ] Run `schema/sessions.sql` in Supabase SQL Editor
+- [ ] Design the `shapes` table
+- [ ] Decide: columns vs JSON for shape properties (width, height, x, y, color, rotation)
+- [ ] Justify each design decision in comments
+
+**Questions to answer in your design:**
+
+| Question | Think About... |
+|----------|----------------|
+| What's the primary key? | UUID? Same reasoning as sessions? |
+| How do shapes relate to sessions? | Foreign key to `sessions.id`? |
+| What shape types exist? | Rectangle, circle, line — same columns or different? |
+| Which properties change often? | Position? Size? Color? |
+| Will you query by shape properties? | "Find all red shapes"? Probably not. |
+
+---
+
 ## Phases
 
 | Phase | What's Added                           |
