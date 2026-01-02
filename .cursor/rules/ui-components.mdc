@@ -1,0 +1,504 @@
+---
+description: UI component development patterns for consistent widget creation and styling
+globs: "**/presentation/widgets/**/*.dart, **/presentation/pages/**/*.dart, **/ui/**/*.dart"
+alwaysApply: false
+---
+
+# UI Components Development
+
+## Purpose
+Standardize UI component creation following the application's design system, ensuring consistent styling, theming integration, and proper component patterns.
+
+## When to Use
+Apply these patterns to all custom widgets, UI components, and design system elements in the presentation layer.
+
+## Component Structure Pattern
+
+### Stateless Widget Pattern
+```dart
+// ✅ Simple stateless component
+class ShapeRenderer extends StatelessWidget {
+  const ShapeRenderer({super.key, required this.shape});
+
+  final Shape shape;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Positioned(
+      left: shape.x,
+      top: shape.y,
+      child: Container(
+        width: shape.width,
+        height: shape.height,
+        decoration: BoxDecoration(
+          color: Color(int.parse(shape.color.replaceFirst('#', '0xFF'))),
+          borderRadius: shape.type == ShapeType.rectangle 
+              ? BorderRadius.circular(4)
+              : null,
+          shape: shape.type == ShapeType.circle 
+              ? BoxShape.circle 
+              : BoxShape.rectangle,
+        ),
+      ),
+    );
+  }
+}
+```
+
+### Consumer Widget Pattern
+```dart
+// ✅ Widget that needs state from Riverpod
+class ShapesList extends ConsumerWidget {
+  const ShapesList({super.key, required this.sessionId});
+  
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(canvasVM(sessionId));
+    
+    return switch (state) {
+      CanvasLoading() => const LoadingWidget(),
+      CanvasLoaded(:final shapes) => Stack(
+          children: shapes.map((s) => ShapeRenderer(shape: s)).toList(),
+        ),
+      CanvasError(:final exception) => ErrorRetryWidget(
+          exception: exception,
+          onRetry: () => ref.invalidate(canvasVM(sessionId)),
+        ),
+    };
+  }
+}
+```
+
+## Design System Integration
+
+### Theme Integration
+```dart
+// ✅ Always use theme colors
+@override
+Widget build(BuildContext context) {
+  final theme = Theme.of(context);
+  
+  return Container(
+    decoration: BoxDecoration(
+      color: theme.colorScheme.surface,
+      border: Border.all(
+        color: theme.colorScheme.outline,
+        width: 1,
+      ),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: /* content */,
+  );
+}
+
+// ❌ Never hardcode colors
+Container(
+  color: Colors.blue, // BAD!
+  child: /* content */,
+)
+```
+
+### Using Dimension Constants
+```dart
+// ✅ Use design system constants
+const SizedBox(height: 16)
+const EdgeInsets.all(16)
+BorderRadius.circular(8)
+
+// Consider creating a Dimensions class
+class Dimensions {
+  static const double smallSpace = 8;
+  static const double mediumSpace = 16;
+  static const double largeSpace = 24;
+  static const double borderRadius = 8;
+  static const EdgeInsets screenPadding = EdgeInsets.all(16);
+}
+```
+
+## Common Widget Patterns
+
+### Canvas Component (Whiteboard-Specific)
+```dart
+// ✅ Interactive canvas component
+class WhiteboardCanvas extends StatelessWidget {
+  const WhiteboardCanvas({
+    super.key,
+    required this.shapes,
+    required this.onShapeCreated,
+    required this.onShapeUpdated,
+  });
+
+  final List<Shape> shapes;
+  final ValueChanged<Shape> onShapeCreated;
+  final ValueChanged<Shape> onShapeUpdated;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onPanStart: _handlePanStart,
+      onPanUpdate: _handlePanUpdate,
+      onPanEnd: _handlePanEnd,
+      child: CustomPaint(
+        painter: ShapesPainter(shapes: shapes),
+        size: Size.infinite,
+      ),
+    );
+  }
+  
+  void _handlePanStart(DragStartDetails details) {
+    // Start creating/dragging shape
+  }
+  
+  void _handlePanUpdate(DragUpdateDetails details) {
+    // Update shape
+  }
+  
+  void _handlePanEnd(DragEndDetails details) {
+    // Finalize shape
+  }
+}
+```
+
+### User Cursor Component
+```dart
+// ✅ Remote user cursor display
+class UserCursor extends StatelessWidget {
+  const UserCursor({
+    super.key,
+    required this.userId,
+    required this.x,
+    required this.y,
+    required this.color,
+    required this.userName,
+  });
+
+  final String userId;
+  final double x;
+  final double y;
+  final String color;
+  final String userName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: x,
+      top: y,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.navigation,
+            color: Color(int.parse(color.replaceFirst('#', '0xFF'))),
+            size: 24,
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Color(int.parse(color.replaceFirst('#', '0xFF'))),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              userName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+### Loading States
+```dart
+// ✅ Consistent loading widget
+class LoadingWidget extends StatelessWidget {
+  const LoadingWidget({super.key, this.message});
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(),
+          if (message != null) ...[
+            const SizedBox(height: 16),
+            Text(message!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+```
+
+### Error States
+```dart
+// ✅ Error widget with retry
+class ErrorRetryWidget extends StatelessWidget {
+  const ErrorRetryWidget({
+    super.key,
+    required this.exception,
+    required this.onRetry,
+  });
+
+  final BaseException exception;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Something went wrong',
+            style: theme.textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            exception.message,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+## Session Card Component
+```dart
+// ✅ Session card for list display
+class SessionCard extends StatelessWidget {
+  const SessionCard({
+    super.key,
+    required this.session,
+    required this.onTap,
+  });
+
+  final Session session;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                session.name,
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Created ${_formatDate(session.createdAt)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  String _formatDate(DateTime date) {
+    // Simple date formatting
+    return '${date.day}/${date.month}/${date.year}';
+  }
+}
+```
+
+## Online Users List
+```dart
+// ✅ Display online users (presence)
+class OnlineUsersList extends StatelessWidget {
+  const OnlineUsersList({
+    super.key,
+    required this.users,
+  });
+
+  final List<OnlineUser> users;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: users.length,
+        itemBuilder: (context, index) {
+          final user = users[index];
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: CircleAvatar(
+              backgroundColor: Color(int.parse(
+                user.color.replaceFirst('#', '0xFF'),
+              )),
+              radius: 16,
+              child: Text(
+                user.name[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+```
+
+## Empty State Patterns
+```dart
+// ✅ Consistent empty states
+class EmptyStateWidget extends StatelessWidget {
+  const EmptyStateWidget({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.action,
+  });
+
+  final IconData icon;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 64,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: theme.textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            if (action != null) ...[
+              const SizedBox(height: 24),
+              action!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+## Anti-patterns
+
+### Avoid These Patterns
+```dart
+// ❌ Don't create widgets without theme integration
+class BadWidget extends StatelessWidget {
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.blue, // Hard-coded colors
+      child: Text('Bad'), // No typography system
+    );
+  }
+}
+
+// ❌ Don't use direct padding values everywhere
+Widget badPadding() {
+  return Padding(
+    padding: const EdgeInsets.all(16.0), // Magic numbers
+    child: content,
+  );
+}
+
+// ❌ Don't create deeply nested widgets
+Widget tooDeep() {
+  return Container(
+    child: Padding(
+      child: Container(
+        child: Padding(
+          child: Column(
+            child: Container( // Too deep! Extract widgets
+```
+
+## Whiteboard-Specific Components
+
+### ShapeRenderer
+- Renders shapes (rectangle, circle, line) on canvas
+- Handles selection state
+- Uses shape color and dimensions
+
+### UserCursor
+- Shows remote user cursor position
+- Displays user name/color
+- Updates via broadcast messages
+
+### WhiteboardCanvas
+- Interactive drawing surface
+- Handles pan/tap gestures
+- Renders all shapes
+
+### OnlineUsersList
+- Shows connected users (presence)
+- User avatars with colors
+- Real-time updates
+
+### SessionCard
+- Session name and metadata
+- Tap to open session
+- Creation date display
+
+### LoadingWidget
+- Centered spinner
+- Optional message
+
+### ErrorRetryWidget
+- Error icon and message
+- Retry button
+- Centered layout

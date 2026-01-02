@@ -1,0 +1,351 @@
+---
+description: Services pattern implementation for consistent data access abstractions
+globs: "**/domain/services/**/*.dart, **/data/datasources/**/*.dart"
+alwaysApply: false
+---
+
+# Services Pattern Implementation
+
+## Purpose
+Standardize service pattern implementation for consistent data access abstractions, proper service layer patterns, and clean separation between domain and data layers.
+
+**Note:** This project uses the **Services pattern** instead of the traditional Repository pattern. Services consolidate business logic and DTO conversion in one place.
+
+## When to Use
+Apply these patterns to all service implementations and data access abstractions.
+
+## Service Interface Pattern
+
+### Abstract Service Definition
+```dart
+// ✅ Domain layer service interface
+abstract class ShapeServices {
+  /// Gets all shapes for a session
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId);
+
+  /// Gets a specific shape by ID
+  Future<Either<BaseException, Shape>> getShapeById(String id);
+
+  /// Creates a new shape
+  Future<Either<BaseException, Shape>> createShape(Shape shape);
+
+  /// Updates a shape
+  Future<Either<BaseException, Shape>> updateShape(Shape shape);
+
+  /// Deletes a shape
+  Future<Either<BaseException, void>> deleteShape(String id);
+}
+```
+
+### Service Implementation Pattern
+```dart
+// ✅ Domain layer service implementation (same file as interface)
+class ShapeServicesImpl implements ShapeServices {
+  ShapeServicesImpl(this._dataSource);
+
+  final ShapeRemoteDataSource _dataSource;
+
+  @override
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId) async {
+    try {
+      final shapeDtos = await _dataSource.getShapesData(sessionId);
+      final shapes = shapeDtos.map((dto) => dto.toEntity()).toList();
+      return right(shapes);
+    } catch (e) {
+      return left(ShapeException.unknown(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<BaseException, Shape>> getShapeById(String id) async {
+    try {
+      final shapeDto = await _dataSource.getShapeById(id);
+      return right(shapeDto.toEntity());
+    } catch (e) {
+      return left(ShapeException.notFound());
+    }
+  }
+}
+```
+
+## DataSource Pattern
+
+### DataSource Interface
+```dart
+// ✅ Data layer DataSource interface
+abstract class ShapeRemoteDataSource {
+  Future<List<ShapeDto>> getShapesData(String sessionId);
+  Future<ShapeDto> getShapeById(String id);
+  Future<ShapeDto> createShape(ShapeDto shape);
+  Future<ShapeDto> updateShape(ShapeDto shape);
+  Future<void> deleteShape(String id);
+}
+```
+
+### Supabase DataSource Implementation
+```dart
+// ✅ Supabase implementation
+class SupabaseShapeDataSource implements ShapeRemoteDataSource {
+  SupabaseShapeDataSource(this._client);
+
+  final SupabaseClient _client;
+
+  @override
+  Future<List<ShapeDto>> getShapesData(String sessionId) async {
+    final response = await _client
+        .from('shapes')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at');
+    
+    return (response as List)
+        .map((data) => ShapeDto.fromMap(data))
+        .toList();
+  }
+
+  @override
+  Future<ShapeDto> createShape(ShapeDto shape) async {
+    final response = await _client
+        .from('shapes')
+        .insert(shape.toMap())
+        .select()
+        .single();
+    
+    return ShapeDto.fromMap(response);
+  }
+
+  @override
+  Future<ShapeDto> updateShape(ShapeDto shape) async {
+    final response = await _client
+        .from('shapes')
+        .update(shape.toMap())
+        .eq('id', shape.id)
+        .select()
+        .single();
+    
+    return ShapeDto.fromMap(response);
+  }
+
+  @override
+  Future<void> deleteShape(String id) async {
+    await _client.from('shapes').delete().eq('id', id);
+  }
+}
+```
+
+## Error Handling in Services
+
+### Exception Transformation
+```dart
+// ✅ Transform data layer exceptions to domain exceptions
+@override
+Future<Either<BaseException, Shape>> getShapeById(String id) async {
+  try {
+    final shapeDto = await _dataSource.getShapeById(id);
+    return right(shapeDto.toEntity());
+  } on PostgrestException catch (e) {
+    if (e.code == 'PGRST116') {
+      return left(ShapeException.notFound());
+    }
+    return left(ShapeException.unknown(e.message));
+  } catch (e) {
+    return left(ShapeException.unknown(e.toString()));
+  }
+}
+```
+
+### Service Error Handling
+```dart
+// ✅ Consistent error handling
+Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId) async {
+  try {
+    final shapeDtos = await _dataSource.getShapesData(sessionId);
+    final shapes = shapeDtos.map((dto) => dto.toEntity()).toList();
+    return right(shapes);
+  } on SocketException {
+    return left(NetworkException.noConnection());
+  } on TimeoutException {
+    return left(NetworkException.timeout());
+  } catch (e) {
+    return left(ShapeException.unknown(e.toString()));
+  }
+}
+```
+
+## Mock Data Pattern
+
+### Mock Data Source
+```dart
+// ✅ Centralized mock data for development/testing
+class MockShapeDataSource implements ShapeRemoteDataSource {
+  MockShapeDataSource._();
+
+  static final List<ShapeDto> _mockShapes = [
+    ShapeDto(
+      id: 'shape-1',
+      sessionId: 'session-1',
+      rawType: 'rectangle',
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 150,
+      color: '#FF5733',
+    ),
+    ShapeDto(
+      id: 'shape-2',
+      sessionId: 'session-1',
+      rawType: 'circle',
+      x: 400,
+      y: 200,
+      width: 100,
+      height: 100,
+      color: '#33FF57',
+    ),
+  ];
+
+  @override
+  Future<List<ShapeDto>> getShapesData(String sessionId) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return _mockShapes.where((s) => s.sessionId == sessionId).toList();
+  }
+
+  @override
+  Future<ShapeDto> getShapeById(String id) async {
+    await Future.delayed(const Duration(milliseconds: 200));
+    return _mockShapes.firstWhere((s) => s.id == id);
+  }
+}
+```
+
+## Service Testing Patterns
+
+### Service Unit Testing
+```dart
+test('ShapeServices gets session shapes successfully', () async {
+  // Arrange
+  final mockDataSource = MockShapeDataSource();
+  final service = ShapeServicesImpl(mockDataSource);
+  
+  // Act
+  final result = await service.getSessionShapes('session-1');
+  
+  // Assert
+  expect(result.isRight(), true);
+  result.fold(
+    (l) => fail('Should not return error'),
+    (shapes) => expect(shapes, isNotEmpty),
+  );
+});
+
+test('ShapeServices returns error when shape not found', () async {
+  // Arrange
+  final mockDataSource = MockShapeDataSource();
+  final service = ShapeServicesImpl(mockDataSource);
+  
+  // Act
+  final result = await service.getShapeById('non-existent');
+  
+  // Assert
+  expect(result.isLeft(), true);
+  result.fold(
+    (exception) => expect(exception, isA<ShapeException>()),
+    (r) => fail('Should return error'),
+  );
+});
+```
+
+## Anti-patterns
+
+### Avoid These Patterns
+```dart
+// ❌ Don't bypass service abstractions
+class BadViewModel {
+  Future<List<Shape>> getShapes() async {
+    // Direct database access from presentation layer
+    final response = await Supabase.instance.client
+        .from('shapes')
+        .select();
+    return response.map((data) => Shape.fromJson(data)).toList();
+  }
+}
+
+// ❌ Don't ignore error handling in services
+class BadShapeServices implements ShapeServices {
+  @override
+  Future<Either<BaseException, Shape>> getShapeById(String id) async {
+    final shape = await dataSource.getShapeById(id);
+    return right(shape.toEntity()); // Could throw! Should catch
+  }
+}
+
+// ❌ Don't create services without interfaces
+class BadDirectService {
+  // No interface - tight coupling
+  Future<List<Shape>> getShapes() async { /* ... */ }
+}
+
+// ❌ Don't mix concerns in services
+class BadMixedService implements ShapeServices {
+  @override
+  Future<Either<BaseException, Shape>> createShape(Shape shape) async {
+    final created = await _dataSource.createShape(ShapeDto.fromEntity(shape));
+    
+    // UI concern in service - bad!
+    showNotification('Shape created!');
+    
+    return right(created.toEntity());
+  }
+}
+```
+
+## Whiteboard Service Examples
+
+### Session Services
+- Get all sessions for a user
+- Create new session
+- Update session metadata
+- Delete session (cascades to shapes)
+
+### Shape Services
+- Get shapes for a session
+- Create shape
+- Update shape (position, size, color)
+- Delete shape
+- Batch operations
+
+### Realtime Subscriptions (Special Case)
+For Supabase Realtime, subscriptions are handled differently:
+
+```dart
+// ✅ Realtime subscription in DataSource
+abstract class ShapeRealtimeDataSource {
+  Stream<List<ShapeDto>> watchSessionShapes(String sessionId);
+}
+
+class SupabaseShapeRealtimeDataSource implements ShapeRealtimeDataSource {
+  SupabaseShapeRealtimeDataSource(this._client);
+  
+  final SupabaseClient _client;
+  
+  @override
+  Stream<List<ShapeDto>> watchSessionShapes(String sessionId) {
+    return _client
+        .from('shapes')
+        .stream(primaryKey: ['id'])
+        .eq('session_id', sessionId)
+        .map((data) => data.map((d) => ShapeDto.fromMap(d)).toList());
+  }
+}
+```
+
+## Validation Checklist
+
+- [ ] Service interfaces in domain layer
+- [ ] Service implementations in domain layer (same file)
+- [ ] DataSource interfaces in data layer
+- [ ] DataSource implementations in data layer
+- [ ] All service methods return Either<BaseException, T>
+- [ ] Proper error transformation
+- [ ] Mock data sources for development
+- [ ] Unit tests for services
+- [ ] No business logic in DataSources (only data access)

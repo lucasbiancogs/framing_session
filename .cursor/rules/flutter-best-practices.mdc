@@ -1,0 +1,370 @@
+---
+description: Flutter best practices and coding guidelines focusing on clean code principles
+globs: ["**/*.dart"]
+alwaysApply: true
+---
+
+# Flutter Best Practices
+
+## Purpose
+Apply Flutter best practices and coding guidelines across the codebase, focusing on clean code principles, proper widget composition, and Flutter-specific conventions.
+
+## Core Principles
+
+### Use Flutter 3.x features and Material 3 design
+- Leverage latest Flutter APIs
+- Follow Material 3 design guidelines
+- Use ColorScheme.fromSeed for theming
+
+### Implement proper null safety practices
+- Always handle nullable values
+- Use null-aware operators (`?.`, `??`, `??=`)
+- Avoid force unwrapping (`!`) unless absolutely certain
+
+### Follow proper naming conventions
+- Files: `snake_case.dart`
+- Classes: `PascalCase`
+- Variables/Functions: `camelCase`
+- Private members: `_privateField`
+- Constants: `const` or `static const`
+
+## Widget Composition
+
+### Keep widgets small and focused
+```dart
+// ✅ Good - small, focused widget
+class ShapeRenderer extends StatelessWidget {
+  const ShapeRenderer({super.key, required this.shape});
+  
+  final Shape shape;
+  
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: shape.x,
+      top: shape.y,
+      child: _buildShape(),
+    );
+  }
+  
+  Widget _buildShape() {
+    return Container(
+      width: shape.width,
+      height: shape.height,
+      decoration: BoxDecoration(
+        color: Color(int.parse(shape.color.replaceFirst('#', '0xFF'))),
+        shape: shape.type == ShapeType.circle 
+            ? BoxShape.circle 
+            : BoxShape.rectangle,
+      ),
+    );
+  }
+}
+
+// ❌ Bad - widget doing too much
+class CanvasWidget extends StatelessWidget {
+  // 200 lines of complex layout and business logic
+}
+```
+
+### Use const constructors when possible
+```dart
+// ✅ Good - const constructor
+const SizedBox(height: 16)
+const Text('Hello')
+const Icon(Icons.brush)
+
+// ❌ Bad - missing const
+SizedBox(height: 16)
+Text('Hello')
+Icon(Icons.brush)
+```
+
+### Implement proper widget keys
+```dart
+// ✅ Good - using keys for list items
+ListView.builder(
+  itemBuilder: (context, index) {
+    return ShapeListItem(
+      key: ValueKey(shapes[index].id),
+      shape: shapes[index],
+    );
+  },
+)
+```
+
+## Layout Principles
+
+### Use paddings instead of positioned widgets when possible
+```dart
+// ✅ Good - use Padding for content spacing
+Padding(
+  padding: const EdgeInsets.all(16),
+  child: content,
+)
+
+// Note: Positioned is correct for canvas/whiteboard use cases
+// where absolute positioning is required
+```
+
+### Avoid unnecessary stacks
+```dart
+// ✅ Good - use Column/Row with alignment
+Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [header, body, footer],
+)
+
+// Note: Stack is appropriate for canvas overlays
+// like shapes, cursors, and selection handles
+```
+
+### Use proper spacing
+```dart
+// ✅ Good - use SizedBox for spacing
+Column(
+  children: [
+    Text('Title'),
+    const SizedBox(height: 8),
+    Text('Subtitle'),
+  ],
+)
+
+// ❌ Bad - use Padding for spacing between children
+Column(
+  children: [
+    Text('Title'),
+    Padding(padding: EdgeInsets.only(top: 8)),
+    Text('Subtitle'),
+  ],
+)
+```
+
+## State Management
+
+### Prefer ConsumerWidget over StatefulWidget when using Riverpod
+```dart
+// ✅ Good - ConsumerWidget with Riverpod
+class CanvasPage extends ConsumerWidget {
+  const CanvasPage({super.key, required this.sessionId});
+  
+  final String sessionId;
+  
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(canvasVM(sessionId));
+    return /* UI */;
+  }
+}
+
+// ❌ Bad - StatefulWidget when only watching state
+class CanvasPage extends StatefulWidget {
+  // No local state needed, should use ConsumerWidget
+}
+```
+
+### Dispose resources properly
+```dart
+// ✅ Good - disposing controllers and subscriptions
+class DrawingWidget extends StatefulWidget {
+  @override
+  State<DrawingWidget> createState() => _DrawingWidgetState();
+}
+
+class _DrawingWidgetState extends State<DrawingWidget> {
+  late TextEditingController _controller;
+  StreamSubscription? _subscription;
+  
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _subscription = stream.listen(/* ... */);
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    _subscription?.cancel();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) => /* UI */;
+}
+```
+
+## Performance
+
+### Use const constructors aggressively
+- Reduces widget rebuilds
+- Improves performance
+- Makes intent clear
+
+### Avoid unnecessary rebuilds
+```dart
+// ✅ Good - select specific state
+final selectedShapeId = ref.watch(
+  canvasVM(sessionId).select((state) => 
+    state is CanvasLoaded ? state.selectedShapeId : null
+  ),
+);
+
+// ❌ Bad - rebuild on any state change
+final state = ref.watch(canvasVM(sessionId));
+final selectedShapeId = state is CanvasLoaded ? state.selectedShapeId : null;
+```
+
+### Extract complex logic to methods
+```dart
+// ✅ Good - extracted method
+Widget _buildShapeToolbar(Shape shape) {
+  return Row(
+    children: [
+      _buildColorPicker(shape.color),
+      _buildSizeControls(shape.width, shape.height),
+    ],
+  );
+}
+```
+
+## Canvas-Specific Best Practices
+
+### Use CustomPainter for complex rendering
+```dart
+// ✅ Good - CustomPainter for shapes
+class ShapesPainter extends CustomPainter {
+  ShapesPainter({required this.shapes});
+  
+  final List<Shape> shapes;
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final shape in shapes) {
+      _drawShape(canvas, shape);
+    }
+  }
+  
+  void _drawShape(Canvas canvas, Shape shape) {
+    final paint = Paint()
+      ..color = Color(int.parse(shape.color.replaceFirst('#', '0xFF')))
+      ..style = PaintingStyle.fill;
+    
+    switch (shape.type) {
+      case ShapeType.rectangle:
+        canvas.drawRect(
+          Rect.fromLTWH(shape.x, shape.y, shape.width, shape.height),
+          paint,
+        );
+      case ShapeType.circle:
+        canvas.drawOval(
+          Rect.fromLTWH(shape.x, shape.y, shape.width, shape.height),
+          paint,
+        );
+      case ShapeType.line:
+        // Draw line
+    }
+  }
+  
+  @override
+  bool shouldRepaint(covariant ShapesPainter oldDelegate) {
+    return shapes != oldDelegate.shapes;
+  }
+}
+```
+
+### Handle gestures efficiently
+```dart
+// ✅ Good - efficient gesture handling
+GestureDetector(
+  onPanStart: _handleDragStart,
+  onPanUpdate: _handleDragUpdate,
+  onPanEnd: _handleDragEnd,
+  child: CustomPaint(
+    painter: ShapesPainter(shapes: shapes),
+    size: Size.infinite,
+  ),
+)
+```
+
+## Error Handling
+
+### Always handle errors gracefully
+```dart
+// ✅ Good - proper error handling
+Image.network(
+  imageUrl,
+  errorBuilder: (context, error, stackTrace) {
+    return const Icon(Icons.broken_image);
+  },
+)
+
+// ❌ Bad - no error handling
+Image.network(imageUrl)
+```
+
+### Use try-catch for async operations
+```dart
+// ✅ Good - wrapped in try-catch
+Future<void> loadData() async {
+  try {
+    final data = await service.getData();
+    // handle data
+  } catch (e) {
+    // handle error
+  }
+}
+```
+
+## Code Organization
+
+### One widget per file for complex widgets
+- Makes code more maintainable
+- Easier to find and modify
+- Better for code review
+
+### Group related widgets in same file for simple widgets
+```dart
+// ✅ Good - simple related widgets together
+// shape_widgets.dart
+class ShapeRenderer extends StatelessWidget { /* */ }
+class ShapeSelectionHandle extends StatelessWidget { /* */ }
+class ShapeToolbar extends StatelessWidget { /* */ }
+```
+
+## Whiteboard-Specific Guidelines
+
+### Theme Usage
+Always use theme colors, never hardcoded:
+```dart
+// ✅ Good
+Container(color: Theme.of(context).colorScheme.primary)
+
+// ❌ Bad
+Container(color: Colors.blue)
+```
+
+### Shape Colors from Data
+```dart
+// ✅ Good - parse color from shape data
+Color(int.parse(shape.color.replaceFirst('#', '0xFF')))
+
+// ❌ Bad - hardcoded fallback without handling
+Colors.black // What if shape has a color?
+```
+
+### Canvas-specific widgets
+- Keep shape renderers consistent
+- Reuse ShapeRenderer widget
+- Extract common patterns
+
+## Anti-patterns
+
+Avoid:
+- God widgets (>300 lines)
+- Business logic in widgets
+- Stateful widgets without state
+- Ignoring const constructors
+- Deep widget trees (>5 levels)
+- Magic numbers in UI code
+- Direct Supabase access in widgets

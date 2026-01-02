@@ -1,0 +1,151 @@
+---
+description: Guidelines for evolving and maintaining Cursor rules based on codebase patterns
+globs: .cursor/rules/**/*.mdc
+alwaysApply: false
+---
+
+# Self-Improvement - Rule Evolution
+
+## Purpose
+Guide the continuous evolution and maintenance of Cursor rules based on emerging patterns, code review feedback, and development insights.
+
+## When to Use
+Apply when reviewing code, conducting retrospectives, or when patterns emerge that could benefit from standardization.
+
+## Pattern Recognition
+
+### Signals for New Rules
+
+Monitor for:
+- **Repeated Code Review Comments**: Same feedback 3+ times
+- **Emerging Patterns**: New pattern used in 3+ files
+- **Bug Prevention**: Common bugs that could be prevented
+- **Performance Issues**: Patterns causing performance problems
+- **Consistency Issues**: Implementing features differently across codebase
+
+### Analysis Process
+
+When evaluating potential new rules:
+
+1. **Compare with Existing Rules**
+   - Does this conflict?
+   - Can existing rules be extended?
+   - Are cross-references needed?
+
+2. **Pattern Validation**
+   - Is it used consistently?
+   - Does it align with DDD architecture?
+   - Is it Flutter/Dart best practice?
+
+3. **Example Collection**
+   - Gather real examples from codebase
+   - Document correct and incorrect implementations
+   - Include edge cases
+
+4. **Impact Assessment**
+   - How many files affected?
+   - Learning curve?
+   - Does it significantly improve quality?
+
+## Rule Updates
+
+### Add New Rules When:
+
+- **New Architecture Patterns**: Consistent pattern used 3+ times
+- **Common Errors**: Repeated bugs that rules could prevent
+- **Performance Optimizations**: Proven performance improvements
+- **Security Practices**: New security requirements
+
+### Modify Existing Rules When:
+
+- **Better Examples Available**: Replace outdated code
+- **Edge Cases Discovered**: Document new anti-patterns
+- **Related Rules Updated**: Keep cross-references accurate
+- **Implementation Evolution**: Update for new versions
+
+## Rule Quality Checks
+
+Before adding/updating rules:
+
+- [ ] **Actionable**: Provides clear guidance
+- [ ] **Specific**: Uses real code examples
+- [ ] **Current**: References are up to date
+- [ ] **Consistent**: Pattern used consistently
+- [ ] **Clear Rationale**: Purpose documented
+- [ ] **Proper Scope**: Globs target relevant files
+- [ ] **Cross-Referenced**: Related rules linked
+
+## Rule Format
+
+```markdown
+---
+description: Brief, clear purpose
+globs: ["**/*.dart"]
+alwaysApply: false
+---
+
+# Title
+
+## Purpose
+What this accomplishes
+
+## When to Use
+Specific scenarios
+
+## Patterns
+Correct implementations
+
+## Anti-patterns
+What to avoid
+
+## Related Rules
+Links to other .mdc files
+```
+
+## Continuous Improvement
+
+### Regular Review (Monthly)
+
+1. **Code Review Analysis**: Collect feedback themes
+2. **Codebase Evolution**: Track changes
+3. **Feedback**: Survey questions
+4. **Effectiveness**: Assess rule impact
+
+### Rule Deprecation
+
+Remove rules when:
+- Pattern unused 6+ months
+- Technology no longer supported
+- Architecture fundamentally changed
+- Conflicts with new practices
+
+## Whiteboard Rule Evolution
+
+### Current Focus Areas
+- Shape rendering patterns
+- Realtime subscription handling
+- Presence state management
+- Broadcast message patterns
+- Canvas performance optimization
+
+### Future Considerations
+- Multi-user conflict resolution
+- Undo/redo patterns
+- Shape selection patterns
+- Layer management
+- Export functionality
+
+## Metrics
+
+Track:
+- Rule adoption rate
+- Code review efficiency
+- Bug prevention
+- Onboarding speed
+- Code consistency
+
+Success indicators:
+- Less architectural discussion in reviews
+- Increased code consistency
+- Faster feature implementation
+- Reduced architectural bugs

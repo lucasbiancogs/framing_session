@@ -1,0 +1,507 @@
+---
+description: ViewModel implementation patterns using StateNotifier for presentation layer business logic
+globs: "**/*_vm.dart, **/pages/**/*.dart, **/*providers.dart"
+alwaysApply: false
+---
+
+# ViewModel Implementation Patterns
+
+## Purpose
+Standardize ViewModel implementation using StateNotifier patterns, ensuring consistent state management, proper error handling, and clear separation between UI logic and business operations.
+
+## When to Use
+Apply these patterns to all ViewModels, state classes, and presentation layer business logic implementations.
+
+## StateNotifier ViewModel Structure
+
+### Complete ViewModel Pattern
+```dart
+// ✅ Standard ViewModel implementation
+final canvasVM = StateNotifierProvider.autoDispose.family<CanvasVM, CanvasState, String>(
+  (ref, sessionId) => CanvasVM(
+    ref.watch(shapeServices),
+    sessionId,
+  ),
+  name: 'canvasVM',
+  dependencies: [shapeServices],
+);
+
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
+    _loadShapes();
+  }
+
+  final ShapeServices _shapeServices;
+  final String sessionId;
+
+  // Type-safe state accessor
+  CanvasLoaded get _loadedState => state as CanvasLoaded;
+
+  Future<void> _loadShapes() async {
+    final result = await _shapeServices.getSessionShapes(sessionId);
+    
+    result.fold(
+      (exception) => state = CanvasError(exception),
+      (shapes) => state = CanvasLoaded(shapes: shapes),
+    );
+  }
+
+  Future<void> retryLoading() async {
+    state = const CanvasLoading();
+    await _loadShapes();
+  }
+  
+  void selectShape(String? shapeId) {
+    if (state is! CanvasLoaded) return;
+    
+    state = _loadedState.copyWith(selectedShapeId: shapeId);
+  }
+}
+```
+
+### Provider Declaration Pattern
+```dart
+// ✅ Provider with proper configuration
+final sessionsVM = StateNotifierProvider.autoDispose<SessionsVM, SessionsState>(
+  (ref) => SessionsVM(ref.watch(sessionServices)),
+  name: 'sessionsVM',
+  dependencies: [sessionServices],
+);
+
+// ✅ Family provider for parameterized ViewModels
+final canvasVM = StateNotifierProvider.autoDispose.family<CanvasVM, CanvasState, String>(
+  (ref, sessionId) => CanvasVM(
+    ref.watch(shapeServices),
+    sessionId,
+  ),
+  name: 'canvasVM',
+  dependencies: [shapeServices],
+);
+
+// ✅ Simple Provider for form-like ViewModels
+final createSessionVM = Provider.autoDispose<CreateSessionVM>(
+  (ref) {
+    final vm = CreateSessionVM(ref.watch(sessionServices));
+    ref.onDispose(vm.dispose);
+    return vm;
+  },
+  name: 'createSessionVM',
+);
+```
+
+## State Class Hierarchies
+
+### Immutable State Pattern
+```dart
+// ✅ Complete state hierarchy with sealed pattern
+@immutable
+abstract class CanvasState extends Equatable {
+  const CanvasState();
+  
+  @override
+  List<Object?> get props => [];
+}
+
+class CanvasLoading extends CanvasState {
+  const CanvasLoading();
+}
+
+class CanvasLoaded extends CanvasState {
+  const CanvasLoaded({
+    required this.shapes,
+    this.selectedShapeId,
+    this.currentTool = ShapeTool.select,
+  });
+
+  final List<Shape> shapes;
+  final String? selectedShapeId;
+  final ShapeTool currentTool;
+
+  @override
+  List<Object?> get props => [shapes, selectedShapeId, currentTool];
+  
+  CanvasLoaded copyWith({
+    List<Shape>? shapes,
+    String? selectedShapeId,
+    ShapeTool? currentTool,
+  }) {
+    return CanvasLoaded(
+      shapes: shapes ?? this.shapes,
+      selectedShapeId: selectedShapeId ?? this.selectedShapeId,
+      currentTool: currentTool ?? this.currentTool,
+    );
+  }
+  
+  Shape? get selectedShape => selectedShapeId != null
+      ? shapes.firstWhereOrNull((s) => s.id == selectedShapeId)
+      : null;
+}
+
+class CanvasError extends CanvasState {
+  const CanvasError(this.exception);
+
+  final BaseException exception;
+
+  @override
+  List<Object?> get props => [exception];
+}
+```
+
+## ViewModel Lifecycle Methods
+
+### Initialization Pattern
+```dart
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) 
+    : super(const CanvasLoading()) {
+    _init();
+  }
+
+  final ShapeServices _shapeServices;
+  final String sessionId;
+
+  Future<void> _init() async {
+    await _loadShapes();
+  }
+
+  Future<void> _loadShapes() async {
+    final result = await _shapeServices.getSessionShapes(sessionId);
+    
+    result.fold(
+      (exception) => state = CanvasError(exception),
+      (shapes) => state = CanvasLoaded(shapes: shapes),
+    );
+  }
+}
+```
+
+### Action Methods Pattern
+```dart
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading());
+
+  final ShapeServices _shapeServices;
+  final String sessionId;
+
+  Future<void> createShape({
+    required ShapeType type,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+    required String color,
+  }) async {
+    if (state is! CanvasLoaded) return;
+    
+    final shape = Shape(
+      id: const Uuid().v4(),
+      sessionId: sessionId,
+      type: type,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      color: color,
+    );
+    
+    final result = await _shapeServices.createShape(shape);
+    
+    result.fold(
+      (exception) => { /* Show error notification */ },
+      (createdShape) {
+        state = _loadedState.copyWith(
+          shapes: [..._loadedState.shapes, createdShape],
+          selectedShapeId: createdShape.id,
+        );
+      },
+    );
+  }
+  
+  Future<void> updateShape(Shape shape) async {
+    if (state is! CanvasLoaded) return;
+    
+    // Optimistic update
+    final oldShapes = _loadedState.shapes;
+    state = _loadedState.copyWith(
+      shapes: oldShapes.map((s) => s.id == shape.id ? shape : s).toList(),
+    );
+    
+    final result = await _shapeServices.updateShape(shape);
+    
+    result.fold(
+      (exception) {
+        // Rollback on error
+        state = _loadedState.copyWith(shapes: oldShapes);
+      },
+      (_) { /* Success */ },
+    );
+  }
+  
+  Future<void> deleteShape(String shapeId) async {
+    if (state is! CanvasLoaded) return;
+    
+    final result = await _shapeServices.deleteShape(shapeId);
+    
+    result.fold(
+      (exception) => { /* Show error */ },
+      (_) {
+        state = _loadedState.copyWith(
+          shapes: _loadedState.shapes.where((s) => s.id != shapeId).toList(),
+          selectedShapeId: _loadedState.selectedShapeId == shapeId 
+              ? null 
+              : _loadedState.selectedShapeId,
+        );
+      },
+    );
+  }
+}
+```
+
+## Form ViewModel Pattern
+
+For forms and input handling:
+
+```dart
+class CreateSessionVM extends ChangeNotifier {
+  CreateSessionVM(this._sessionServices);
+
+  final SessionServices _sessionServices;
+  
+  final nameController = TextEditingController();
+  
+  bool _isSubmitting = false;
+  bool get isSubmitting => _isSubmitting;
+  
+  String? _error;
+  String? get error => _error;
+
+  Future<Session?> createSession() async {
+    _isSubmitting = true;
+    _error = null;
+    notifyListeners();
+    
+    // Validate
+    if (nameController.text.isEmpty) {
+      _error = 'Session name is required';
+      _isSubmitting = false;
+      notifyListeners();
+      return null;
+    }
+    
+    // Create session
+    final result = await _sessionServices.createSession(
+      name: nameController.text,
+    );
+    
+    Session? createdSession;
+    result.fold(
+      (exception) {
+        _error = exception.message;
+        _isSubmitting = false;
+        notifyListeners();
+      },
+      (session) {
+        createdSession = session;
+        _isSubmitting = false;
+        notifyListeners();
+      },
+    );
+    
+    return createdSession;
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    super.dispose();
+  }
+}
+```
+
+## Error Handling in ViewModels
+
+### Error State Management
+```dart
+// ✅ Proper error handling
+Future<void> _loadShapes() async {
+  try {
+    final result = await _shapeServices.getSessionShapes(sessionId);
+    
+    result.fold(
+      (exception) => state = CanvasError(exception),
+      (shapes) {
+        if (shapes.isEmpty) {
+          state = CanvasLoaded(shapes: const []);
+        } else {
+          state = CanvasLoaded(shapes: shapes);
+        }
+      },
+    );
+  } on BaseException catch (exception) {
+    state = CanvasError(exception);
+  } catch (e) {
+    state = CanvasError(
+      ShapeException.unknown(e.toString()),
+    );
+  }
+}
+```
+
+## UI Integration
+
+### Consuming State in Widgets
+```dart
+class CanvasPage extends ConsumerWidget {
+  const CanvasPage({super.key, required this.sessionId});
+  
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(canvasVM(sessionId));
+    
+    return Scaffold(
+      appBar: AppBar(title: const Text('Whiteboard')),
+      body: switch (state) {
+        CanvasLoading() => const LoadingWidget(),
+        CanvasLoaded(:final shapes, :final selectedShapeId) => Stack(
+            children: [
+              WhiteboardCanvas(shapes: shapes),
+              if (selectedShapeId != null)
+                ShapeToolbar(
+                  shape: shapes.firstWhere((s) => s.id == selectedShapeId),
+                  onDelete: () => ref
+                      .read(canvasVM(sessionId).notifier)
+                      .deleteShape(selectedShapeId),
+                ),
+            ],
+          ),
+        CanvasError(:final exception) => ErrorRetryWidget(
+            exception: exception,
+            onRetry: () => ref.read(canvasVM(sessionId).notifier).retryLoading(),
+          ),
+      },
+    );
+  }
+}
+```
+
+### Triggering Actions
+```dart
+// ✅ Call ViewModel methods from UI
+GestureDetector(
+  onTapUp: (details) {
+    ref.read(canvasVM(sessionId).notifier).createShape(
+      type: ShapeType.rectangle,
+      x: details.localPosition.dx,
+      y: details.localPosition.dy,
+      width: 100,
+      height: 100,
+      color: '#FF5733',
+    );
+  },
+  child: /* canvas */,
+)
+```
+
+## Testing ViewModels
+
+### ViewModel Unit Testing
+```dart
+test('should emit loading then loaded state', () async {
+  // Arrange
+  final mockShapeServices = MockShapeServices();
+  when(() => mockShapeServices.getSessionShapes('session-1'))
+      .thenAnswer((_) async => right([mockShape]));
+  
+  final vm = CanvasVM(mockShapeServices, 'session-1');
+  
+  // Assert initial state
+  expect(vm.state, isA<CanvasLoading>());
+  
+  // Wait for async operation
+  await Future.delayed(Duration.zero);
+  
+  // Assert final state
+  expect(vm.state, isA<CanvasLoaded>());
+});
+
+test('should add shape to state on create', () async {
+  // Arrange
+  final mockShapeServices = MockShapeServices();
+  when(() => mockShapeServices.getSessionShapes(any()))
+      .thenAnswer((_) async => right([]));
+  when(() => mockShapeServices.createShape(any()))
+      .thenAnswer((_) async => right(mockShape));
+  
+  final vm = CanvasVM(mockShapeServices, 'session-1');
+  await Future.delayed(Duration.zero);
+  
+  // Act
+  await vm.createShape(
+    type: ShapeType.rectangle,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    color: '#000000',
+  );
+  
+  // Assert
+  expect((vm.state as CanvasLoaded).shapes, hasLength(1));
+});
+```
+
+## Anti-patterns
+
+### Avoid These Patterns
+```dart
+// ❌ Don't expose mutable state
+class BadVM extends StateNotifier<BadState> {
+  List<Shape> shapes = []; // Mutable!
+}
+
+// ❌ Don't mix UI logic in ViewModels
+class BadVM extends StateNotifier<State> {
+  void showDialog() { // UI concern
+    // ...
+  }
+}
+
+// ❌ Don't create providers without dependencies
+final badVM = StateNotifierProvider.autoDispose<VM, State>(
+  (ref) => VM(ref.watch(service)),
+  // Missing: dependencies: [service]
+);
+
+// ❌ Don't directly access Supabase from ViewModel
+class BadCanvasVM extends StateNotifier<CanvasState> {
+  Future<void> loadShapes() async {
+    final response = await Supabase.instance.client
+        .from('shapes')
+        .select(); // Direct DB access - BAD!
+  }
+}
+```
+
+## Validation Checklist
+
+Before committing ViewModel code:
+- [ ] StateNotifier classes manage state properly
+- [ ] All state classes are immutable and extend Equatable
+- [ ] Providers have meaningful names
+- [ ] Dependencies are explicitly declared
+- [ ] Loading, loaded, and error states are handled
+- [ ] copyWith methods exist for complex states
+- [ ] Auto-dispose is used for temporary state
+- [ ] No UI logic in ViewModels
+- [ ] Uses Services layer (not direct data access)
+
+## Whiteboard-Specific ViewModels
+
+### Example ViewModels
+- **SessionsVM**: Manages session list
+- **CanvasVM**: Handles canvas state, shapes, selection
+- **PresenceVM**: Manages online users (presence)
+- **CursorVM**: Handles cursor broadcasting
+- **CreateSessionVM**: Form for new session creation

@@ -1,0 +1,839 @@
+---
+description: Core architectural guidelines for Domain-Driven Design with clean architecture
+globs: ["**/*.dart"]
+alwaysApply: true
+---
+
+# Architecture Guidelines
+
+## Purpose
+Enforce Domain-Driven Design (DDD) principles with clean architecture, ensuring proper layer separation and dependency management throughout the Whiteboard Flutter application.
+
+## When to Use
+Apply these rules to all Dart files in the project to maintain architectural consistency and prevent violations of clean architecture principles.
+
+## Layer Structure and Responsibilities
+
+### Core Layer (`lib/core/`)
+- **Purpose**: Cross-cutting concerns and fundamental configuration
+- **Contains**: Environment configuration, base errors/exceptions, shared utilities
+- **Dependencies**: No dependencies on other layers
+- **Example**: EnvConfig, BaseError, BaseException
+- **Note**: Theme and UI constants moved to Presentation layer (UI-specific)
+
+### Data Layer (`lib/data/`)
+- **Purpose**: External data sources and data transformation
+- **Contains**: DTOs (with conversion methods), data sources (Supabase/API/Mock)
+- **Dependencies**: Can depend on Core and Domain layers
+- **Rules**:
+  - DTOs must have `toEntity()`, `fromEntity()`, `fromMap()`, and `toMap()` methods
+  - DataSources return DTOs (not entities)
+  - Use `BaseException` for data layer errors
+  - **NO repository implementations** (use Services pattern instead)
+
+### Domain Layer (`lib/domain/`)
+- **Purpose**: Business logic and rules
+- **Contains**: Entities, Services (interface + implementation in same file)
+- **Dependencies**: Only Core layer (NO presentation or data dependencies)
+- **Rules**:
+  - Entities must be immutable and extend Equatable
+  - Services contain both interface and implementation in the same file
+  - Services use DataSources directly (no repository layer)
+  - Use pure business logic only
+  - **NO separate Use Cases or Repositories** (consolidated in Services)
+
+### Presentation Layer (`lib/presentation/`)
+- **Purpose**: UI components and user interaction
+- **Contains**: Pages, widgets (generic), ViewModels, routing, theme, constants
+- **Dependencies**: Can depend on all other layers
+- **Rules**:
+  - ViewModels handle state management with Riverpod
+  - Pages are stateless/consumer widgets and delegate to ViewModels
+  - Use dependency injection through Riverpod providers
+  - Theme and UI constants live here (presentation-specific)
+  - Generic widgets in `widgets/`, feature-specific widgets in `pages/[feature]/`
+
+## Dependency Rules
+
+### Correct Dependencies
+```dart
+// ✅ Domain service interface + implementation (same file)
+abstract class ShapeServices {
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId);
+}
+
+class ShapeServicesImpl implements ShapeServices {
+  ShapeServicesImpl(this._dataSource);
+  
+  final ShapeRemoteDataSource _dataSource;
+  
+  @override
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId) async {
+    try {
+      final shapeDtos = await _dataSource.getShapesData(sessionId);
+      final shapes = shapeDtos.map((dto) => dto.toEntity()).toList();
+      return right(shapes);
+    } catch (e) {
+      return left(ShapeException.unknown(e.toString()));
+    }
+  }
+}
+
+// ✅ Presentation using domain through dependency injection
+final shapeServices = Provider<ShapeServices>(
+  (_) => throw UnimplementedError(),
+  name: 'shapeServices',
+);
+```
+
+### Incorrect Dependencies
+```dart
+// ❌ Domain depending on presentation
+import 'package:flutter/material.dart'; // In domain layer
+
+// ❌ Domain depending on data layer DTOs
+import '../../data/dtos/shape_dto.dart'; // In domain layer
+
+// ❌ Core depending on any other layer
+import '../domain/entities/shape.dart'; // In core layer
+
+// ❌ Creating separate Use Cases (unnecessary layer)
+abstract class GetShapesUseCase {
+  Future<Either<BaseException, List<Shape>>> execute();
+}
+
+// ❌ Creating separate Repository layer (use Services instead)
+abstract class ShapeRepository {
+  Future<Either<BaseException, List<Shape>>> getShapes();
+}
+```
+
+## Entity Patterns
+
+### Domain Entities
+- Must be immutable (`@immutable` annotation)
+- Must extend Equatable for value equality
+- Should contain only business logic
+- Constructor should validate invariants
+
+```dart
+@immutable
+class Shape extends Equatable {
+  const Shape({
+    required this.id,
+    required this.sessionId,
+    required this.type,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+
+  final String id;
+  final String sessionId;
+  final ShapeType type;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+
+  @override
+  List<Object?> get props => [id, sessionId, type, x, y, width, height, color];
+  
+  @override
+  bool get stringify => true;
+}
+```
+
+## Service Pattern (Centralized Business Logic)
+
+### Services Replace Repositories + Use Cases
+The Services pattern consolidates business logic, eliminating unnecessary layers:
+
+**❌ Old Pattern (too many layers):**
+```
+ViewModel → UseCase → Repository → DataSource
+```
+
+**✅ New Pattern (simplified):**
+```
+ViewModel → Services → DataSource (via DTOs)
+```
+
+### Service Interface + Implementation (Same File)
+```dart
+// lib/domain/services/shape_services.dart
+
+/// Service interface for shape business logic
+abstract class ShapeServices {
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId);
+  Future<Either<BaseException, Shape>> getShapeById(String id);
+  Future<Either<BaseException, Shape>> createShape(Shape shape);
+  Future<Either<BaseException, Shape>> updateShape(Shape shape);
+  Future<Either<BaseException, void>> deleteShape(String id);
+}
+
+/// Service implementation with direct DataSource access
+class ShapeServicesImpl implements ShapeServices {
+  ShapeServicesImpl(this._dataSource);
+  
+  final ShapeRemoteDataSource _dataSource;
+  
+  @override
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId) async {
+    try {
+      // DataSource returns DTOs
+      final shapeDtos = await _dataSource.getShapesData(sessionId);
+      
+      // Convert DTOs to entities
+      final shapes = shapeDtos.map((dto) => dto.toEntity()).toList();
+      
+      return right(shapes);
+    } catch (e) {
+      return left(ShapeException.unknown(e.toString()));
+    }
+  }
+  
+  @override
+  Future<Either<BaseException, Shape>> createShape(Shape shape) async {
+    try {
+      // Convert entity to DTO
+      final dto = ShapeDto.fromEntity(shape);
+      
+      // DataSource creates and returns DTO
+      final createdDto = await _dataSource.createShape(dto);
+      
+      return right(createdDto.toEntity());
+    } catch (e) {
+      return left(ShapeException.unknown(e.toString()));
+    }
+  }
+}
+```
+
+### DataSource Pattern (Returns DTOs)
+```dart
+// lib/data/datasources/shape_remote.dart
+
+/// Remote data source for shapes
+abstract class ShapeRemoteDataSource {
+  Future<List<ShapeDto>> getShapesData(String sessionId);
+  Future<ShapeDto> getShapeById(String id);
+  Future<ShapeDto> createShape(ShapeDto shape);
+  Future<ShapeDto> updateShape(ShapeDto shape);
+  Future<void> deleteShape(String id);
+}
+
+/// Supabase implementation
+class SupabaseShapeDataSource implements ShapeRemoteDataSource {
+  SupabaseShapeDataSource(this._client);
+  
+  final SupabaseClient _client;
+  
+  @override
+  Future<List<ShapeDto>> getShapesData(String sessionId) async {
+    final response = await _client
+        .from('shapes')
+        .select('*')
+        .eq('session_id', sessionId);
+    
+    final shapesData = List<Map<String, dynamic>>.from(response);
+    
+    return shapesData.map((data) => ShapeDto.fromMap(data)).toList();
+  }
+  
+  @override
+  Future<ShapeDto> createShape(ShapeDto shape) async {
+    final response = await _client
+        .from('shapes')
+        .insert(shape.toMap())
+        .select()
+        .single();
+    
+    return ShapeDto.fromMap(response);
+  }
+}
+```
+
+### DTO Pattern (Complete Conversion)
+```dart
+// lib/data/dtos/shape_dto.dart
+
+/// Data Transfer Object for Shape
+class ShapeDto {
+  const ShapeDto({
+    required this.id,
+    required this.sessionId,
+    required this.rawType,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+  
+  final String id;
+  final String sessionId;
+  final String rawType;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+  
+  /// Convert from domain entity to DTO
+  factory ShapeDto.fromEntity(Shape entity) {
+    return ShapeDto(
+      id: entity.id,
+      sessionId: entity.sessionId,
+      rawType: entity.type.name,
+      x: entity.x,
+      y: entity.y,
+      width: entity.width,
+      height: entity.height,
+      color: entity.color,
+    );
+  }
+  
+  /// Convert to domain entity
+  Shape toEntity() {
+    return Shape(
+      id: id,
+      sessionId: sessionId,
+      type: ShapeType.values.byName(rawType),
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      color: color,
+    );
+  }
+  
+  /// Create from database/API map
+  factory ShapeDto.fromMap(Map<String, dynamic> map) {
+    return ShapeDto(
+      id: map['id'] as String,
+      sessionId: map['session_id'] as String,
+      rawType: map['type'] as String,
+      x: (map['x'] as num).toDouble(),
+      y: (map['y'] as num).toDouble(),
+      width: (map['width'] as num).toDouble(),
+      height: (map['height'] as num).toDouble(),
+      color: map['color'] as String? ?? '#000000',
+    );
+  }
+  
+  /// Convert to database/API map
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'session_id': sessionId,
+      'type': rawType,
+      'x': x,
+      'y': y,
+      'width': width,
+      'height': height,
+      'color': color,
+    };
+  }
+}
+```
+
+## File Organization
+
+### Naming Conventions
+- Files: `snake_case.dart`
+- Classes: `PascalCase`
+- Variables/methods: `camelCase`
+- Constants: `SCREAMING_SNAKE_CASE`
+
+### Import Organization
+```dart
+// 1. Dart core libraries
+import 'dart:async';
+
+// 2. Flutter libraries
+import 'package:flutter/material.dart';
+
+// 3. Third-party packages
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:equatable/equatable.dart';
+import 'package:dartz/dartz.dart';
+
+// 4. Local imports (relative paths)
+import '../entities/shape.dart';
+import '../../core/errors/base_exception.dart';
+```
+
+## Widget Organization Guidelines
+
+### Generic Widgets (`presentation/widgets/`)
+Place **only generic, reusable components** that can be used across multiple features:
+
+✅ **Examples of Generic Widgets:**
+- `LoadingWidget` - Generic loading indicator
+- `ErrorRetryWidget` - Generic error display with retry
+- `CustomButton` - Reusable button component
+- `EmptyStateWidget` - Generic empty state display
+- `ConfirmDialog` - Generic confirmation dialog
+
+### Feature-Specific Widgets (`presentation/pages/[feature]/`)
+Place **feature-specific widgets** inside their feature folder:
+
+✅ **Examples of Feature-Specific Widgets:**
+- `ShapeRenderer` → `presentation/pages/canvas/shape_renderer.dart`
+- `UserCursor` → `presentation/pages/canvas/user_cursor.dart`
+- `SessionCard` → `presentation/pages/sessions/session_card.dart`
+- `OnlineUsersList` → `presentation/pages/canvas/online_users_list.dart`
+
+### Decision Criteria
+
+**Use `presentation/widgets/` when:**
+- Widget is used in 3+ different features
+- Widget has no business logic
+- Widget is purely presentational
+- Widget can be reused without modifications
+
+**Use `presentation/pages/[feature]/` when:**
+- Widget is specific to one feature
+- Widget contains feature-specific logic
+- Widget uses feature-specific entities/models
+- Widget is unlikely to be reused elsewhere
+
+## Naming Conventions
+
+### Files (snake_case)
+- Services: `[entity]_services.dart` (e.g., `shape_services.dart`)
+- DTOs: `[entity]_dto.dart` (e.g., `shape_dto.dart`)
+- DataSources: `[entity]_remote.dart` (e.g., `shape_remote.dart`)
+- Entities: `[entity].dart` (e.g., `shape.dart`)
+- ViewModels: `[feature]_vm.dart` (e.g., `canvas_vm.dart`)
+- Pages: `[feature]_page.dart` (e.g., `canvas_page.dart`)
+
+### Classes (PascalCase)
+- Service Interface: `[Entity]Services` (e.g., `ShapeServices`)
+- Service Impl: `[Entity]ServicesImpl` (e.g., `ShapeServicesImpl`)
+- DTO: `[Entity]Dto` (e.g., `ShapeDto`)
+- DataSource Interface: `[Entity]RemoteDataSource` (e.g., `ShapeRemoteDataSource`)
+- DataSource Impl: `Supabase[Entity]DataSource` (e.g., `SupabaseShapeDataSource`)
+- ViewModel: `[Feature]VM` (e.g., `CanvasVM`)
+- State: `[Feature]State` (e.g., `CanvasState`)
+
+### Variables and Methods (camelCase)
+- Private fields: `_privateField`
+- Public methods: `getShapeById()`, `createShape()`
+- Provider names: `canvasVM`, `shapeServices`
+
+## Creating a New Feature
+
+### Step-by-Step Guide
+
+**Example: Creating "Canvas" feature**
+
+1. **Create Domain Entity**
+```dart
+// lib/domain/entities/shape.dart
+@immutable
+class Shape extends Equatable {
+  const Shape({
+    required this.id,
+    required this.sessionId,
+    required this.type,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+  
+  final String id;
+  final String sessionId;
+  final ShapeType type;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+  
+  @override
+  List<Object?> get props => [id, sessionId, type, x, y, width, height, color];
+}
+```
+
+2. **Create DTO**
+```dart
+// lib/data/dtos/shape_dto.dart
+class ShapeDto {
+  const ShapeDto({
+    required this.id,
+    required this.sessionId,
+    required this.rawType,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+  
+  final String id;
+  final String sessionId;
+  final String rawType;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+  
+  factory ShapeDto.fromMap(Map<String, dynamic> map) { /* ... */ }
+  Map<String, dynamic> toMap() { /* ... */ }
+  Shape toEntity() { /* ... */ }
+  factory ShapeDto.fromEntity(Shape entity) { /* ... */ }
+}
+```
+
+3. **Create DataSource**
+```dart
+// lib/data/datasources/shape_remote.dart
+abstract class ShapeRemoteDataSource {
+  Future<List<ShapeDto>> getShapesData(String sessionId);
+  Future<ShapeDto> createShape(ShapeDto shape);
+  Future<ShapeDto> updateShape(ShapeDto shape);
+  Future<void> deleteShape(String id);
+}
+
+class SupabaseShapeDataSource implements ShapeRemoteDataSource {
+  SupabaseShapeDataSource(this._client);
+  
+  final SupabaseClient _client;
+  
+  @override
+  Future<List<ShapeDto>> getShapesData(String sessionId) async {
+    final response = await _client
+        .from('shapes')
+        .select('*')
+        .eq('session_id', sessionId);
+    
+    return (response as List)
+        .map((data) => ShapeDto.fromMap(data))
+        .toList();
+  }
+}
+```
+
+4. **Create Service (Interface + Implementation)**
+```dart
+// lib/domain/services/shape_services.dart
+abstract class ShapeServices {
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId);
+  Future<Either<BaseException, Shape>> createShape(Shape shape);
+  Future<Either<BaseException, Shape>> updateShape(Shape shape);
+}
+
+class ShapeServicesImpl implements ShapeServices {
+  ShapeServicesImpl(this._dataSource);
+  
+  final ShapeRemoteDataSource _dataSource;
+  
+  @override
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(
+    String sessionId,
+  ) async {
+    try {
+      final shapeDtos = await _dataSource.getShapesData(sessionId);
+      final shapes = shapeDtos.map((dto) => dto.toEntity()).toList();
+      return right(shapes);
+    } catch (e) {
+      return left(ShapeException.unknown(e.toString()));
+    }
+  }
+}
+```
+
+5. **Create ViewModel**
+```dart
+// lib/presentation/pages/canvas/canvas_vm.dart
+@immutable
+abstract class CanvasState extends Equatable {
+  const CanvasState();
+  @override
+  List<Object?> get props => [];
+}
+
+class CanvasLoading extends CanvasState {
+  const CanvasLoading();
+}
+
+class CanvasLoaded extends CanvasState {
+  const CanvasLoaded({required this.shapes});
+  
+  final List<Shape> shapes;
+  
+  @override
+  List<Object?> get props => [shapes];
+}
+
+class CanvasError extends CanvasState {
+  const CanvasError(this.exception);
+  
+  final BaseException exception;
+  
+  @override
+  List<Object?> get props => [exception];
+}
+
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) 
+      : super(const CanvasLoading()) {
+    _loadShapes();
+  }
+  
+  final ShapeServices _shapeServices;
+  final String sessionId;
+  
+  Future<void> _loadShapes() async {
+    final result = await _shapeServices.getSessionShapes(sessionId);
+    
+    result.fold(
+      (exception) => state = CanvasError(exception),
+      (shapes) => state = CanvasLoaded(shapes: shapes),
+    );
+  }
+}
+```
+
+6. **Register Dependencies**
+```dart
+// lib/presentation/view_models/global_providers.dart
+
+// DataSource
+final shapeDataSource = Provider<ShapeRemoteDataSource>(
+  (ref) => SupabaseShapeDataSource(Supabase.instance.client),
+  name: 'shapeDataSource',
+);
+
+// Services
+final shapeServices = Provider<ShapeServices>(
+  (ref) => ShapeServicesImpl(ref.read(shapeDataSource)),
+  name: 'shapeServices',
+);
+
+// ViewModel
+final canvasVM = StateNotifierProvider.family<CanvasVM, CanvasState, String>(
+  (ref, sessionId) => CanvasVM(
+    ref.read(shapeServices),
+    sessionId,
+  ),
+  name: 'canvasVM',
+);
+```
+
+7. **Create Page**
+```dart
+// lib/presentation/pages/canvas/canvas_page.dart
+class CanvasPage extends ConsumerWidget {
+  const CanvasPage({super.key, required this.sessionId});
+  
+  final String sessionId;
+  
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(canvasVM(sessionId));
+    
+    return switch (state) {
+      CanvasLoading() => const LoadingWidget(),
+      CanvasLoaded(:final shapes) => WhiteboardCanvas(shapes: shapes),
+      CanvasError(:final exception) => ErrorRetryWidget(
+          exception: exception,
+          onRetry: () => ref.invalidate(canvasVM(sessionId)),
+        ),
+    };
+  }
+}
+```
+
+## Data Flow Pattern
+
+### Standard Flow (Read Operation)
+```
+┌──────────────────────────────────────────────────────────┐
+│                 Presentation Layer                        │
+│  ┌────────────┐           ┌─────────────┐               │
+│  │   Page     │  watch    │  ViewModel  │               │
+│  │            │ ◄────────  │(StateNotifier)│             │
+│  └────────────┘           └──────┬──────┘               │
+└─────────────────────────────────┼────────────────────────┘
+                                  │ calls
+                                  ▼
+┌──────────────────────────────────────────────────────────┐
+│                   Domain Layer                            │
+│  ┌─────────────────────────────────────────┐             │
+│  │         Services                        │             │
+│  │  (interface + implementation)           │             │
+│  │  - Business logic                       │             │
+│  │  - DTO ↔ Entity conversion             │             │
+│  └──────────────┬──────────────────────────┘             │
+└─────────────────┼────────────────────────────────────────┘
+                  │ uses
+                  ▼
+┌──────────────────────────────────────────────────────────┐
+│                    Data Layer                             │
+│  ┌─────────────┐          ┌─────────────┐               │
+│  │     DTO     │ ◄─────►  │ DataSource  │               │
+│  │  fromMap()  │          │(Supabase/API)│              │
+│  │  toMap()    │          └──────┬──────┘               │
+│  │  toEntity() │                 │                       │
+│  │ fromEntity()│                 │                       │
+│  └─────────────┘                 │                       │
+└─────────────────────────────────┼────────────────────────┘
+                                  │
+                                  ▼
+                         ┌──────────────┐
+                         │   Database   │
+                         │  (Supabase)  │
+                         └──────────────┘
+```
+
+## Anti-patterns
+
+### Avoid These Patterns
+```dart
+// ❌ Don't create separate Use Cases
+class GetShapesUseCase {
+  Future<Either<BaseException, List<Shape>>> execute() {
+    return _service.getShapes(); // Just delegates - unnecessary!
+  }
+}
+
+// ❌ Don't create separate Repository layer
+abstract class ShapeRepository {
+  Future<List<Shape>> getShapes();
+}
+
+// ❌ Don't access database directly from presentation
+class BadCanvasPage extends ConsumerWidget {
+  Future<void> _loadShapes() async {
+    final response = await Supabase.instance.client
+        .from('shapes')
+        .select(); // Direct access - BAD!
+  }
+}
+
+// ❌ Don't put business logic in widgets
+class BadShapeRenderer extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    // Business logic in widget - BAD!
+    if (shape.type == ShapeType.rectangle && shape.width > 100) {
+      return LargeRectangleWidget();
+    }
+    return SmallRectangleWidget();
+  }
+}
+```
+
+## Validation Checklist
+
+Before committing code, ensure:
+- [ ] Layer boundaries are respected
+- [ ] Dependencies flow in correct direction (Core ← Domain ← Data ← Presentation)
+- [ ] Entities are immutable and use Equatable
+- [ ] **Services pattern implemented** (NOT separate repositories/use cases)
+- [ ] Services contain interface + implementation in same file
+- [ ] Error handling uses Either pattern
+- [ ] Business logic is in domain layer (Services)
+- [ ] UI logic is in presentation layer (ViewModels)
+- [ ] Data transformation uses DTOs with all 4 methods
+- [ ] DataSources return DTOs (not entities)
+- [ ] ViewModels use StateNotifier + Riverpod
+- [ ] No direct database access from presentation layer
+
+## Whiteboard-Specific Architecture
+
+### Core Entities
+- **Session**: Whiteboard session with name, owner, creation date
+- **Shape**: Rectangle, circle, line with position, size, color
+- **User Presence**: Online users, cursor position, user color (ephemeral)
+- **Cursor**: User cursor position (broadcast, no persistence)
+
+### Layer Examples in Whiteboard
+
+**Core Layer:**
+- `BaseException` - Base class for exceptions
+- `BaseError` - Base class for errors
+- `EnvConfig` - Environment configuration
+
+**Domain Layer:**
+- Entities: `Session`, `Shape`
+- Services: `SessionServices` + `SessionServicesImpl`
+- Services: `ShapeServices` + `ShapeServicesImpl`
+
+**Data Layer:**
+- DTOs: `SessionDto`, `ShapeDto`
+- DataSources: `SessionRemoteDataSource`, `ShapeRemoteDataSource`
+- Implementations: `SupabaseSessionDataSource`, `SupabaseShapeDataSource`
+
+**Presentation Layer:**
+- Theme: `AppTheme`, `WhiteboardColors`
+- Constants: `Dimensions`, `Durations`
+- Pages: `SessionsPage`, `CanvasPage`
+- ViewModels: `SessionsVM`, `CanvasVM`
+- Widgets (generic): `LoadingWidget`, `ErrorRetryWidget`
+- Feature-specific widgets: `ShapeRenderer`, `UserCursor` (in `pages/canvas/`)
+- Dependency Injection: `global_providers.dart` (in `view_models/`)
+
+### File Organization Example
+```
+lib/
+├── core/
+│   ├── errors/
+│   │   ├── base_error.dart
+│   │   └── base_exception.dart
+│   └── config/
+│       └── env_config.dart
+│
+├── domain/
+│   ├── entities/
+│   │   ├── session.dart
+│   │   └── shape.dart
+│   └── services/
+│       ├── session_services.dart     # Interface + Impl
+│       └── shape_services.dart       # Interface + Impl
+│
+├── data/
+│   ├── dtos/
+│   │   ├── session_dto.dart
+│   │   └── shape_dto.dart
+│   └── datasources/
+│       ├── session_remote.dart
+│       └── shape_remote.dart
+│
+└── presentation/
+    ├── theme/
+    │   └── app_theme.dart
+    ├── constants/
+    │   └── dimensions.dart
+    ├── pages/
+    │   ├── sessions/
+    │   │   ├── sessions_page.dart
+    │   │   ├── sessions_vm.dart
+    │   │   └── session_card.dart
+    │   └── canvas/
+    │       ├── canvas_page.dart
+    │       ├── canvas_vm.dart
+    │       ├── shape_renderer.dart
+    │       └── user_cursor.dart
+    ├── widgets/
+    │   ├── loading_widget.dart
+    │   └── error_retry_widget.dart
+    └── view_models/
+        └── global_providers.dart
+```
+
+## Related Documentation
+
+- [DTO & Entities](./dto-entities.mdc) - Data transformation patterns
+- [State Management](./state-management.mdc) - Riverpod and StateNotifier
+- [View Models](./view-models.mdc) - ViewModel implementation patterns
+- [UI Components](./ui-components.mdc) - Widget patterns

@@ -1,0 +1,378 @@
+---
+description: Data Transfer Objects and Entities transformation patterns for clean architecture
+globs: lib/data/dtos/*.dart,lib/domain/entities/*.dart
+alwaysApply: false
+---
+
+# DTO-Entities Transformation Rule
+
+## Purpose
+Establish consistent patterns for Data Transfer Objects (DTOs) and Domain Entities, ensuring proper separation between data and domain layers while maintaining clean transformation patterns.
+
+## When to Use
+- Creating new DTOs for API responses or external data sources
+- Implementing domain entities for business logic
+- Transforming data between layers
+- Handling JSON serialization/deserialization
+- Working with raw data that needs type-safe domain representation
+
+## Core Patterns
+
+### DTO Structure
+```dart
+// DTOs should be immutable and handle raw data
+@immutable
+class ShapeDto {
+  const ShapeDto({
+    required this.id,
+    required this.sessionId,
+    required this.rawType,  // Raw data from external source
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+
+  factory ShapeDto.fromMap(Map<String, dynamic> map) {
+    assert(map['id'] != null);
+    assert(map['session_id'] != null);
+    assert(map['type'] != null);
+    
+    return ShapeDto(
+      id: map['id'] as String,
+      sessionId: map['session_id'] as String,
+      rawType: map['type'] as String,
+      x: (map['x'] as num).toDouble(),
+      y: (map['y'] as num).toDouble(),
+      width: (map['width'] as num).toDouble(),
+      height: (map['height'] as num).toDouble(),
+      color: map['color'] as String? ?? '#000000',
+    );
+  }
+
+  factory ShapeDto.fromEntity(Shape entity) => ShapeDto(
+    id: entity.id,
+    sessionId: entity.sessionId,
+    rawType: entity.type.name,
+    x: entity.x,
+    y: entity.y,
+    width: entity.width,
+    height: entity.height,
+    color: entity.color,
+  );
+
+  final String id;
+  final String sessionId;
+  final String rawType;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+
+  Shape toEntity() => Shape(
+    id: id,
+    sessionId: sessionId,
+    type: _shapeTypeFromRaw(rawType),
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    color: color,
+  );
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'session_id': sessionId,
+    'type': rawType,
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+    'color': color,
+  };
+  
+  static ShapeType _shapeTypeFromRaw(String raw) {
+    return ShapeType.values.firstWhere(
+      (type) => type.name == raw,
+      orElse: () => ShapeType.rectangle,
+    );
+  }
+}
+```
+
+### Entity Structure
+```dart
+// Entities should be immutable and use domain types
+@immutable
+class Shape extends Equatable {
+  const Shape({
+    required this.id,
+    required this.sessionId,
+    required this.type,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+  });
+
+  final String id;
+  final String sessionId;
+  final ShapeType type;  // Domain enum
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+
+  @override
+  List<Object?> get props => [id, sessionId, type, x, y, width, height, color];
+
+  @override
+  bool get stringify => true;
+  
+  // Business logic belongs in entities
+  bool get isVisible => width > 0 && height > 0;
+  
+  Rect get bounds => Rect.fromLTWH(x, y, width, height);
+}
+```
+
+## Required Conventions
+
+### 1. DTO Naming and Structure
+- DTOs must end with `Dto` suffix
+- Use `@immutable` annotation
+- Store raw external data (e.g., `rawType`, `rawStatus`)
+- Implement `fromMap` constructor with assertions
+- Implement `fromEntity` factory constructor
+- Implement `toEntity()` method
+- Implement `toMap()` method
+
+### 2. Entity Naming and Structure
+- Entities should NOT have suffix (pure domain names)
+- Use `@immutable` annotation
+- Extend `Equatable` for value equality
+- Use domain-specific types (enums, value objects)
+- Override `props` getter with all fields
+- Set `stringify = true` for debugging
+
+### 3. Transformation Methods
+```dart
+// DTO to Entity
+Shape toEntity() => Shape(
+  id: id,
+  sessionId: sessionId,
+  type: shapeTypeFromRaw(raw: rawType),  // Convert raw to domain type
+);
+
+// Entity to DTO
+factory ShapeDto.fromEntity(Shape entity) => ShapeDto(
+  id: entity.id,
+  sessionId: entity.sessionId,
+  rawType: entity.type.name,  // Convert domain to raw type
+);
+```
+
+### 4. JSON Handling
+```dart
+// Always use assertions in fromMap
+factory ShapeDto.fromMap(Map<String, dynamic> map) {
+  assert(map['id'] != null);
+  assert(map['session_id'] != null);
+  
+  return ShapeDto(
+    id: map['id'] as String,
+    sessionId: map['session_id'] as String,
+    // ...
+  );
+}
+
+// Handle nullable fields properly
+factory SessionDto.fromMap(Map<String, dynamic> map) {
+  return SessionDto(
+    name: map['name'] as String? ?? 'Untitled',
+    createdAt: map['created_at'] != null 
+        ? DateTime.parse(map['created_at'] as String) 
+        : DateTime.now(),
+  );
+}
+```
+
+### 5. Type Conversion Patterns
+```dart
+// Use helper functions for raw-to-domain conversion
+ShapeType shapeTypeFromRaw(String raw) => switch (raw) {
+  'rectangle' => ShapeType.rectangle,
+  'circle' => ShapeType.circle,
+  'line' => ShapeType.line,
+  _ => throw ArgumentError('Unknown shape type: $raw'),
+};
+
+// Date handling
+final createdAt = DateTime.parse(rawCreatedDate);
+final updatedAt = rawUpdatedDate != null 
+    ? DateTime.parse(rawUpdatedDate) 
+    : null;
+```
+
+## Anti-patterns
+
+### ❌ Don't put business logic in DTOs
+```dart
+// Bad - business logic in DTO
+class ShapeDto {
+  bool get isLarge => width > 100 && height > 100;
+}
+
+// Good - business logic in entity
+class Shape {
+  bool get isLarge => width > 100 && height > 100;
+}
+```
+
+### ❌ Don't use domain types in DTOs
+```dart
+// Bad - domain enum in DTO
+class ShapeDto {
+  final ShapeType type;  // Domain type
+}
+
+// Good - raw data in DTO
+class ShapeDto {
+  final String rawType;  // Raw external data
+}
+```
+
+### ❌ Don't skip validation in fromMap
+```dart
+// Bad - no validation
+factory ShapeDto.fromMap(Map<String, dynamic> map) {
+  return ShapeDto(id: map['id'], sessionId: map['session_id']);
+}
+
+// Good - proper validation
+factory ShapeDto.fromMap(Map<String, dynamic> map) {
+  assert(map['id'] != null);
+  assert(map['session_id'] != null);
+  return ShapeDto(
+    id: map['id'] as String,
+    sessionId: map['session_id'] as String,
+  );
+}
+```
+
+### ❌ Don't forget immutability
+```dart
+// Bad - mutable fields
+class ShapeDto {
+  String id;
+  double x;
+}
+
+// Good - immutable with @immutable annotation
+@immutable
+class ShapeDto {
+  const ShapeDto({required this.id, required this.x});
+  final String id;
+  final double x;
+}
+```
+
+## Whiteboard DTOs
+
+### Session DTO Example
+- Maps session metadata from database
+- Handles timestamps (created_at, updated_at)
+- Manages owner information
+
+```dart
+@immutable
+class SessionDto {
+  const SessionDto({
+    required this.id,
+    required this.name,
+    required this.ownerId,
+    required this.createdAt,
+  });
+  
+  final String id;
+  final String name;
+  final String ownerId;
+  final DateTime createdAt;
+  
+  factory SessionDto.fromMap(Map<String, dynamic> map) {
+    assert(map['id'] != null);
+    return SessionDto(
+      id: map['id'] as String,
+      name: map['name'] as String? ?? 'Untitled Session',
+      ownerId: map['owner_id'] as String,
+      createdAt: DateTime.parse(map['created_at'] as String),
+    );
+  }
+  
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'owner_id': ownerId,
+    'created_at': createdAt.toIso8601String(),
+  };
+  
+  Session toEntity() => Session(
+    id: id,
+    name: name,
+    ownerId: ownerId,
+    createdAt: createdAt,
+  );
+  
+  factory SessionDto.fromEntity(Session entity) => SessionDto(
+    id: entity.id,
+    name: entity.name,
+    ownerId: entity.ownerId,
+    createdAt: entity.createdAt,
+  );
+}
+```
+
+### Shape DTO Example
+- Handles shape type enum conversion
+- Manages position and size (x, y, width, height)
+- Processes color as hex string
+
+### User Cursor (Broadcast Only - No DTO)
+- Cursor data is ephemeral (broadcast)
+- No database persistence needed
+- Simple data class, not DTO
+
+```dart
+// Not a DTO - just a data class for broadcast
+class CursorPosition {
+  const CursorPosition({
+    required this.userId,
+    required this.x,
+    required this.y,
+    required this.color,
+  });
+  
+  final String userId;
+  final double x;
+  final double y;
+  final String color;
+  
+  Map<String, dynamic> toJson() => {
+    'user_id': userId,
+    'x': x,
+    'y': y,
+    'color': color,
+  };
+  
+  factory CursorPosition.fromJson(Map<String, dynamic> json) => CursorPosition(
+    userId: json['user_id'] as String,
+    x: (json['x'] as num).toDouble(),
+    y: (json['y'] as num).toDouble(),
+    color: json['color'] as String,
+  );
+}
+```

@@ -1,6 +1,6 @@
 # Flutter
 
-This folder contains the Flutter application code.
+This folder contains the Flutter application code for the Whiteboard collaborative canvas.
 
 ## Structure
 
@@ -10,12 +10,60 @@ flutter/
 ├── pubspec.yaml
 └── lib/
     ├── main.dart
-    ├── app/              # App-level configuration
+    │
+    ├── app/                    # App-level configuration
     │   └── supabase_config.dart
-    ├── features/         # Feature modules (session, canvas, etc.)
-    ├── data/             # Data layer (repositories, models)
-    └── ui/               # Shared UI components
+    │
+    ├── core/                   # Cross-cutting concerns
+    │   ├── errors/             # Base exceptions, error handling
+    │   │   └── base_exception.dart
+    │   └── config/             # Environment configuration
+    │       └── env_config.dart
+    │
+    ├── domain/                 # Business logic layer
+    │   ├── entities/           # Immutable domain models
+    │   │   ├── session.dart
+    │   │   └── shape.dart
+    │   └── services/           # Interface + implementation
+    │       ├── session_services.dart
+    │       └── shape_services.dart
+    │
+    ├── data/                   # Data layer
+    │   ├── dtos/               # Data Transfer Objects
+    │   │   ├── session_dto.dart
+    │   │   └── shape_dto.dart
+    │   └── datasources/        # Remote data sources
+    │       ├── session_remote.dart
+    │       └── shape_remote.dart
+    │
+    └── presentation/           # UI layer
+        ├── pages/              # Feature pages + ViewModels
+        │   ├── sessions/
+        │   │   ├── sessions_page.dart
+        │   │   └── sessions_vm.dart
+        │   └── canvas/
+        │       ├── canvas_page.dart
+        │       ├── canvas_vm.dart
+        │       └── shape_renderer.dart
+        ├── widgets/            # Reusable widgets
+        │   ├── loading_widget.dart
+        │   └── error_retry_widget.dart
+        └── view_models/        # Global providers
+            └── global_providers.dart
 ```
+
+## Architecture Overview
+
+This project follows **DDD (Domain-Driven Design)** with clean architecture:
+
+| Layer | Purpose | Contains |
+|-------|---------|----------|
+| **Core** | Cross-cutting concerns | Exceptions, config |
+| **Domain** | Business logic | Entities, Services |
+| **Data** | External data access | DTOs, DataSources |
+| **Presentation** | UI | Pages, Widgets, ViewModels |
+
+See `.cursor/rules/architecture.mdc` for detailed patterns.
 
 ## Setup
 
@@ -94,11 +142,69 @@ The anon key grants access to your database **as an anonymous user**. Without Ro
 
 ```sql
 -- Anyone with your anon key can run this
-SELECT * FROM users;
-DELETE FROM users;
+SELECT * FROM sessions;
+DELETE FROM shapes;
 ```
 
 **Always enable RLS on your tables.** The anon key is safe only when RLS policies restrict what anonymous users can do.
+
+---
+
+## Key Patterns
+
+### Services (Domain Layer)
+Interface and implementation in the same file:
+
+```dart
+// lib/domain/services/shape_services.dart
+abstract class ShapeServices {
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId);
+}
+
+class ShapeServicesImpl implements ShapeServices {
+  ShapeServicesImpl(this._dataSource);
+  final ShapeRemoteDataSource _dataSource;
+  
+  @override
+  Future<Either<BaseException, List<Shape>>> getSessionShapes(String sessionId) async {
+    try {
+      final dtos = await _dataSource.getShapesData(sessionId);
+      return right(dtos.map((d) => d.toEntity()).toList());
+    } catch (e) {
+      return left(ShapeException.unknown(e.toString()));
+    }
+  }
+}
+```
+
+### DTOs (Data Layer)
+With all 4 conversion methods:
+
+```dart
+// lib/data/dtos/shape_dto.dart
+class ShapeDto {
+  factory ShapeDto.fromMap(Map<String, dynamic> map);  // DB → DTO
+  Map<String, dynamic> toMap();                         // DTO → DB
+  Shape toEntity();                                     // DTO → Entity
+  factory ShapeDto.fromEntity(Shape entity);            // Entity → DTO
+}
+```
+
+### ViewModels (Presentation Layer)
+StateNotifier with Riverpod:
+
+```dart
+// lib/presentation/pages/canvas/canvas_vm.dart
+final canvasVM = StateNotifierProvider.family<CanvasVM, CanvasState, String>(
+  (ref, sessionId) => CanvasVM(ref.watch(shapeServices), sessionId),
+);
+
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._services, this.sessionId) : super(const CanvasLoading()) {
+    _loadShapes();
+  }
+}
+```
 
 ---
 
@@ -107,5 +213,19 @@ DELETE FROM users;
 | Phase | What's Added                             |
 |-------|------------------------------------------|
 | 1     | Project initialization, Supabase SDK     |
+| 2     | Tables & data modeling                   |
+| 3     | Database Realtime (CDC)                  |
 | 4     | Local state management, canvas rendering |
-| 5+    | Realtime integrations                    |
+| 5     | Presence (online users)                  |
+| 6     | Broadcast (cursors)                      |
+| 7     | Integration                              |
+
+---
+
+## Related Documentation
+
+- [Architecture Rules](../.cursor/rules/architecture.mdc) — DDD patterns
+- [DTO & Entities](../.cursor/rules/dto-entities.mdc) — Data transformation
+- [State Management](../.cursor/rules/state-management.mdc) — Riverpod patterns
+- [View Models](../.cursor/rules/view-models.mdc) — ViewModel patterns
+- [UI Components](../.cursor/rules/ui-components.mdc) — Widget patterns

@@ -1,6 +1,7 @@
 ---
 description: Global rules for the Supabase Realtime learning project
-globs: *
+globs: "*"
+alwaysApply: true
 ---
 
 # Framing Session — Global Context
@@ -69,12 +70,16 @@ We're modeling a collaborative whiteboard where multiple users can:
 │
 ├── .cursor/rules/         ← This folder
 │   ├── global.mdc         ← Always active
-│   └── phase-*.mdc        ← Manually activated per phase
+│   ├── architecture.mdc   ← DDD architecture patterns
+│   ├── phase-*.mdc        ← Phase-specific rules
+│   └── *.mdc              ← Other pattern rules
 │
 ├── supabase/
 │   ├── README.md
 │   ├── schema/            ← SQL table definitions
-│   │   └── sessions.sql
+│   │   ├── sessions.sql
+│   │   ├── shapes.sql
+│   │   └── shape_type.sql
 │   ├── realtime/          ← Realtime documentation
 │   │   ├── presence.md
 │   │   └── broadcast.md
@@ -83,11 +88,24 @@ We're modeling a collaborative whiteboard where multiple users can:
 │
 └── flutter/
     ├── README.md
+    ├── pubspec.yaml
     └── lib/
-        ├── app/           ← App configuration, routing
-        ├── features/      ← Feature modules
-        ├── data/          ← Repositories, models
-        └── ui/            ← Shared UI components
+        ├── main.dart
+        ├── app/               ← App configuration, Supabase setup
+        │   └── supabase_config.dart
+        ├── core/              ← Cross-cutting concerns
+        │   ├── errors/        ← Base exceptions
+        │   └── config/        ← Environment config
+        ├── domain/            ← Business logic layer
+        │   ├── entities/      ← Session, Shape
+        │   └── services/      ← Interface + implementation
+        ├── data/              ← Data layer
+        │   ├── dtos/          ← Data transfer objects
+        │   └── datasources/   ← Supabase data sources
+        └── presentation/      ← UI layer
+            ├── pages/         ← Feature pages
+            ├── widgets/       ← Reusable widgets
+            └── view_models/   ← Global providers
 ```
 
 ---
@@ -136,8 +154,7 @@ I finish the rest myself.
 
 - **Flutter ≠ Supabase**
 - Backend concepts must NEVER be buried in UI code
-- Data layer concerns stay in `data/`
-- UI concerns stay in `ui/`
+- Follow the DDD layer structure (see architecture.mdc)
 - Supabase configuration and concepts stay in `supabase/`
 
 ### 7. No Over-Engineering
@@ -145,6 +162,16 @@ I finish the rest myself.
 - Only implement what the current phase requires
 - No "while we're here" additions
 - No premature abstractions
+
+### 8. Architecture Patterns (When Building Features)
+
+When building Flutter features, follow the patterns in `.cursor/rules/architecture.mdc`:
+- **Entities** in `domain/entities/` — immutable, extend Equatable
+- **Services** in `domain/services/` — interface + implementation in same file
+- **DTOs** in `data/dtos/` — with fromMap, toMap, toEntity, fromEntity
+- **DataSources** in `data/datasources/` — return DTOs, not entities
+- **ViewModels** in `presentation/pages/[feature]/` — StateNotifier pattern
+- **Pages** in `presentation/pages/[feature]/` — ConsumerWidget
 
 ---
 
@@ -177,6 +204,15 @@ Use **Database CDC** instead.
 Complex, unreliable, doesn't handle crashes.
 Use **Presence** instead — automatic cleanup on disconnect.
 
+### Direct Database Access in UI
+
+```dart
+// ❌ Never do this in a widget
+final response = await Supabase.instance.client.from('shapes').select();
+```
+
+Always go through Services → DataSources. See architecture.mdc.
+
 ---
 
 ## How to Use Phase Rules
@@ -187,3 +223,14 @@ When starting a new phase:
 2. Or reference the rule: "Apply phase-N rules"
 
 Phase rules are in `.cursor/rules/phase-*.mdc`
+
+---
+
+## Related Rules
+
+- [architecture.mdc](./architecture.mdc) — DDD layer structure and patterns
+- [dto-entities.mdc](./dto-entities.mdc) — Data transformation patterns
+- [state-management.mdc](./state-management.mdc) — Riverpod and StateNotifier
+- [view-models.mdc](./view-models.mdc) — ViewModel implementation
+- [ui-components.mdc](./ui-components.mdc) — Widget patterns
+- [flutter-best-practices.mdc](./flutter-best-practices.mdc) — Flutter conventions

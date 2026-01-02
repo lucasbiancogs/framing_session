@@ -1,0 +1,437 @@
+---
+description: Riverpod state management patterns including StateNotifier, providers, and state updates
+globs: "**/*_vm.dart, **/*providers.dart, **/pages/**/*.dart"
+alwaysApply: false
+---
+
+# State Management with Riverpod
+
+## Purpose
+Standardize state management patterns using Riverpod, ensuring consistent provider definitions, StateNotifier implementations, and proper dependency management throughout the application.
+
+## When to Use
+Apply these patterns to all ViewModels, providers, and state-related code in the presentation layer.
+
+## Provider Patterns
+
+### Provider Types and Usage
+
+#### StateNotifierProvider for Complex State
+Use for ViewModels that manage complex state with multiple transitions:
+
+```dart
+// ✅ StateNotifierProvider with dependencies
+final canvasVM = StateNotifierProvider.autoDispose.family<CanvasVM, CanvasState, String>(
+  (ref, sessionId) => CanvasVM(
+    ref.watch(shapeServices),
+    sessionId,
+  ),
+  name: 'canvasVM',
+  dependencies: [shapeServices],
+);
+
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
+    _loadShapes();
+  }
+
+  final ShapeServices _shapeServices;
+  final String sessionId;
+  
+  // State management methods...
+}
+```
+
+#### Provider for Services and Dependencies
+Use for dependency injection and service instances:
+
+```dart
+// ✅ Service providers with proper naming
+final shapeServices = Provider<ShapeServices>(
+  (_) => throw UnimplementedError(),
+  name: 'shapeServices',
+);
+
+final sessionServices = Provider<SessionServices>(
+  (_) => throw UnimplementedError(),
+  name: 'sessionServices',
+);
+```
+
+#### Provider.autoDispose for Temporary State
+Use for state that should be cleaned up automatically:
+
+```dart
+// ✅ Auto-dispose for temporary ViewModels
+final createShapeVM = Provider.autoDispose<CreateShapeVM>(
+  (ref) {
+    final vm = CreateShapeVM(ref.watch(shapeServices));
+    ref.onDispose(vm.dispose);
+    return vm;
+  },
+  name: 'createShapeVM',
+);
+```
+
+### Provider Naming Conventions
+- ViewModels: `featureVM` (e.g., `canvasVM`, `sessionsVM`, `presenceVM`)
+- Services: `featureServices` (e.g., `shapeServices`, `sessionServices`)
+- DataSources: `featureDataSource` (e.g., `shapeDataSource`)
+- Data providers: `dataTypeProvider` (e.g., `currentSessionProvider`)
+- Global dependencies: descriptive names (e.g., `supabaseClientProvider`)
+
+## StateNotifier Implementation Patterns
+
+### State Class Hierarchy
+All state classes must be immutable and extend Equatable:
+
+```dart
+// ✅ Complete state hierarchy
+@immutable
+abstract class CanvasState extends Equatable {
+  const CanvasState();
+  
+  @override
+  List<Object?> get props => [];
+}
+
+class CanvasLoading extends CanvasState {
+  const CanvasLoading();
+}
+
+class CanvasLoaded extends CanvasState {
+  const CanvasLoaded({
+    required this.shapes,
+    this.selectedShapeId,
+  });
+
+  final List<Shape> shapes;
+  final String? selectedShapeId;
+
+  @override
+  List<Object?> get props => [shapes, selectedShapeId];
+  
+  CanvasLoaded copyWith({
+    List<Shape>? shapes,
+    String? selectedShapeId,
+  }) {
+    return CanvasLoaded(
+      shapes: shapes ?? this.shapes,
+      selectedShapeId: selectedShapeId ?? this.selectedShapeId,
+    );
+  }
+}
+
+class CanvasError extends CanvasState {
+  const CanvasError(this.exception);
+
+  final BaseException exception;
+
+  @override
+  List<Object?> get props => [exception];
+}
+```
+
+### StateNotifier Constructor Pattern
+```dart
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
+    // ✅ Start async initialization in constructor
+    _loadShapes();
+  }
+
+  final ShapeServices _shapeServices;
+  final String sessionId;
+  
+  // ✅ Private method for initialization
+  Future<void> _loadShapes() async {
+    final result = await _shapeServices.getSessionShapes(sessionId);
+    result.fold(
+      (exception) => state = CanvasError(exception),
+      (shapes) => state = CanvasLoaded(shapes: shapes),
+    );
+  }
+}
+```
+
+## Dependency Management
+
+### Provider Dependencies
+Always declare dependencies for proper lifecycle management:
+
+```dart
+// ✅ Explicit dependencies
+final canvasVM = StateNotifierProvider.autoDispose.family<CanvasVM, CanvasState, String>(
+  (ref, sessionId) => CanvasVM(
+    ref.watch(shapeServices),
+    sessionId,
+  ),
+  name: 'canvasVM',
+  dependencies: [shapeServices],
+);
+```
+
+### Global Provider Overrides
+Define global providers that are overridden at app level:
+
+```dart
+// ✅ Global providers in global_providers.dart
+final supabaseClientProvider = Provider<SupabaseClient>(
+  (_) => throw UnimplementedError(),
+  name: 'supabaseClient',
+);
+
+final shapeServices = Provider<ShapeServices>(
+  (_) => throw UnimplementedError(),
+  name: 'shapeServices',
+);
+
+// ✅ Override in app root
+ProviderScope(
+  overrides: [
+    supabaseClientProvider.overrideWithValue(Supabase.instance.client),
+    shapeServices.overrideWithValue(
+      ShapeServicesImpl(SupabaseShapeDataSource(Supabase.instance.client)),
+    ),
+  ],
+  child: const WhiteboardApp(),
+)
+```
+
+## ViewModel Patterns
+
+### Loading Dependencies Pattern
+```dart
+class SessionsVM extends StateNotifier<SessionsState> {
+  SessionsVM(this._sessionServices) 
+    : super(const SessionsLoading()) {
+    _loadSessions();
+  }
+
+  final SessionServices _sessionServices;
+
+  Future<void> _loadSessions() async {
+    final result = await _sessionServices.getAllSessions();
+    
+    result.fold(
+      (exception) => state = SessionsError(exception),
+      (sessions) => state = SessionsLoaded(sessions: sessions),
+    );
+  }
+}
+```
+
+### Retry Pattern
+```dart
+class CanvasVM extends StateNotifier<CanvasState> {
+  // ... constructor and other methods
+
+  Future<void> retryLoading() async {
+    state = const CanvasLoading();
+    await _loadShapes();
+  }
+}
+```
+
+### State Accessor Pattern
+```dart
+class CanvasVM extends StateNotifier<CanvasState> {
+  // ✅ Type-safe state accessor
+  CanvasLoaded get _loadedState => state as CanvasLoaded;
+
+  void selectShape(String shapeId) {
+    if (state is! CanvasLoaded) return;
+    
+    state = _loadedState.copyWith(selectedShapeId: shapeId);
+  }
+  
+  Future<void> addShape(Shape shape) async {
+    if (state is! CanvasLoaded) return;
+    
+    final result = await _shapeServices.createShape(shape);
+    
+    result.fold(
+      (exception) => { /* handle error */ },
+      (createdShape) {
+        state = _loadedState.copyWith(
+          shapes: [..._loadedState.shapes, createdShape],
+        );
+      },
+    );
+  }
+}
+```
+
+## UI Integration Patterns
+
+### Watching State
+```dart
+class CanvasPage extends ConsumerWidget {
+  const CanvasPage({super.key, required this.sessionId});
+  
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // ✅ Watch state
+    final state = ref.watch(canvasVM(sessionId));
+    
+    return switch (state) {
+      CanvasLoading() => const LoadingWidget(),
+      CanvasLoaded(:final shapes) => WhiteboardCanvas(shapes: shapes),
+      CanvasError(:final exception) => ErrorRetryWidget(
+          exception: exception,
+          onRetry: () => ref.read(canvasVM(sessionId).notifier).retryLoading(),
+        ),
+    };
+  }
+}
+```
+
+### Listening for Side Effects
+```dart
+class CanvasPage extends ConsumerWidget {
+  const CanvasPage({super.key, required this.sessionId});
+  
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(canvasVM(sessionId));
+
+    // ✅ Listen for error states to show snackbars
+    ref.listen(canvasVM(sessionId), (previous, next) {
+      if (next is CanvasError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.exception.message)),
+        );
+      }
+    });
+
+    return /* UI */;
+  }
+}
+```
+
+### Notifier Access
+```dart
+// ✅ Access notifier methods
+IconButton(
+  icon: const Icon(Icons.add),
+  onPressed: () => ref.read(canvasVM(sessionId).notifier).addShape(newShape),
+)
+```
+
+## Realtime State Patterns (Whiteboard-Specific)
+
+### Stream Subscription in ViewModel
+```dart
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this._realtimeDataSource, this.sessionId) 
+      : super(const CanvasLoading()) {
+    _init();
+  }
+
+  final ShapeServices _shapeServices;
+  final ShapeRealtimeDataSource _realtimeDataSource;
+  final String sessionId;
+  StreamSubscription<List<ShapeDto>>? _subscription;
+
+  Future<void> _init() async {
+    // Initial load
+    await _loadShapes();
+    
+    // Subscribe to realtime updates
+    _subscription = _realtimeDataSource
+        .watchSessionShapes(sessionId)
+        .listen(_onRealtimeUpdate);
+  }
+  
+  void _onRealtimeUpdate(List<ShapeDto> shapeDtos) {
+    if (state is! CanvasLoaded) return;
+    
+    final shapes = shapeDtos.map((dto) => dto.toEntity()).toList();
+    state = _loadedState.copyWith(shapes: shapes);
+  }
+  
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+}
+```
+
+### Presence State (Ephemeral)
+```dart
+// ✅ Presence state - separate from persistent state
+@immutable
+class PresenceState extends Equatable {
+  const PresenceState({
+    this.onlineUsers = const [],
+    this.isConnected = false,
+  });
+  
+  final List<OnlineUser> onlineUsers;
+  final bool isConnected;
+  
+  @override
+  List<Object?> get props => [onlineUsers, isConnected];
+  
+  PresenceState copyWith({
+    List<OnlineUser>? onlineUsers,
+    bool? isConnected,
+  }) {
+    return PresenceState(
+      onlineUsers: onlineUsers ?? this.onlineUsers,
+      isConnected: isConnected ?? this.isConnected,
+    );
+  }
+}
+```
+
+## Anti-patterns
+
+### Avoid These Patterns
+```dart
+// ❌ Don't create providers without names
+final badProvider = Provider((ref) => SomeService());
+
+// ❌ Don't forget dependencies
+final badVM = StateNotifierProvider.autoDispose<VM, State>(
+  (ref) => VM(ref.watch(someService)), // Missing dependencies list
+);
+
+// ❌ Don't use mutable state classes
+class BadState {
+  List<Shape> shapes = []; // Should be final
+}
+
+// ❌ Don't access state synchronously after async operations
+Future<void> badMethod() async {
+  await someAsyncOperation();
+  final currentShapes = state.shapes; // State might have changed
+}
+
+// ❌ Don't forget to cancel subscriptions
+class BadVM extends StateNotifier<State> {
+  StreamSubscription? _sub;
+  
+  void init() {
+    _sub = stream.listen(/* ... */);
+  }
+  
+  // Missing dispose() - memory leak!
+}
+```
+
+## Validation Checklist
+
+Before committing state management code:
+- [ ] All state classes are immutable and extend Equatable
+- [ ] Providers have meaningful names
+- [ ] Dependencies are explicitly declared
+- [ ] Loading, loaded, and error states are handled
+- [ ] copyWith methods are implemented for complex states
+- [ ] Auto-dispose is used for temporary state
+- [ ] Stream subscriptions are cancelled in dispose()
