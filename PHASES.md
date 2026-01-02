@@ -44,6 +44,53 @@ Phase-specific rules are in `.cursor/rules/phase-N.mdc`.
 
 ---
 
+## Phase 0 — Mental Model & Taxonomy
+
+- [x] Read `supabase/notes/concepts.md` thoroughly
+- [x] Write a one-paragraph explanation for each realtime tool (in your own words)
+- [x] Decide which tool fits each use case:
+  - Shape creation → ?
+  - Cursor movement → ?
+  - User list → ?
+- [x] Draw your own data flow diagram showing how the three tools interact
+
+---
+
+## Phase 1 — Project & Environment Setup
+
+- [x] Create a Supabase project at supabase.com
+- [x] Run the app with your credentials:
+  ```bash
+  cd flutter
+  flutter run \
+    --dart-define=SUPABASE_URL=https://xxx.supabase.co \
+    --dart-define=SUPABASE_ANON_KEY=your-anon-key
+  ```
+- [x] Verify the app starts without throwing an exception
+- [x] Break it intentionally — try running without the `--dart-define` flags and see the error
+- [x] Answer: Why is the anon key dangerous without RLS?
+
+---
+
+## Phase 2 — Tables & Data Modeling
+
+- [x] Run `supabase/schema/sessions.sql` in Supabase SQL Editor
+- [ ] Design the `shapes` table
+- [ ] Decide: columns vs JSON for shape properties (width, height, x, y, color, rotation)
+- [ ] Justify each design decision in comments
+
+**Questions to answer in your design:**
+
+| Question | Think About... |
+|----------|----------------|
+| What's the primary key? | UUID? Same reasoning as sessions? |
+| How do shapes relate to sessions? | Foreign key to `sessions.id`? |
+| What shape types exist? | Rectangle, circle, line — same columns or different? |
+| Which properties change often? | Position? Size? Color? |
+| Will you query by shape properties? | "Find all red shapes"? Probably not. |
+
+---
+
 ## Rules Location
 
 ```

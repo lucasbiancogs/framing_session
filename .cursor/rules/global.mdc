@@ -113,12 +113,26 @@ Every phase produces:
 - A README section or documentation update
 - A checklist of TODOs for me to complete
 
-### 4. Example, Not Completion
+### 4. TODOs in PHASES.md
+
+At the end of each phase prompt, **always** add a checklist section to `PHASES.md`:
+
+```markdown
+## Phase N — Phase Name
+
+- [ ] First task
+- [ ] Second task
+- [ ] Third task
+```
+
+This is the single source of truth for tracking progress.
+
+### 5. Example, Not Completion
 
 Provide ONE correct pattern per phase.
 I finish the rest myself.
 
-### 5. Folder Separation Is Mandatory
+### 6. Folder Separation Is Mandatory
 
 - **Flutter ≠ Supabase**
 - Backend concepts must NEVER be buried in UI code
@@ -126,7 +140,7 @@ I finish the rest myself.
 - UI concerns stay in `ui/`
 - Supabase configuration and concepts stay in `supabase/`
 
-### 6. No Over-Engineering
+### 7. No Over-Engineering
 
 - Only implement what the current phase requires
 - No "while we're here" additions
