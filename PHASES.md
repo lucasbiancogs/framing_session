@@ -112,6 +112,74 @@ Phase-specific rules are in `.cursor/rules/phase-N.mdc`.
 
 ---
 
+## Phase 4 — Flutter Local State & Canvas
+
+### Collaborative Whiteboard Architecture
+
+The canvas follows a **single CustomPainter** architecture for real-time collaboration:
+
+| Component | Responsibility |
+|-----------|----------------|
+| **WhiteboardCanvas** | Receives pointer events, performs hit testing, emits operations |
+| **WhiteboardPainter** | Single CustomPainter that renders ALL shapes |
+| **CanvasVM** | Single source of truth, applies operations immutably |
+| **EditIntent** | What kind of edit (move, resize, rotate) |
+| **EditOperation** | The actual change to broadcast |
+
+**Mental Model:**
+```
+Canvas decides WHO receives input
+Shapes decide WHAT it means
+Operations decide WHAT changes
+ViewModel decides WHAT is true
+```
+
+### Concepts to Understand
+
+- [ ] Read the architecture files and understand the data flow:
+  - `WhiteboardCanvas` → hit test → `EditIntent` → `EditOperation` → `CanvasVM.applyOperation()`
+  - **Local state** (CanvasLoaded): `panOffset`, `zoom`, `currentTool`, `selectedShapeId`
+  - **Shared state** (CanvasLoaded): `shapes` — will come from DB in Phase 5+
+- [ ] Why are shapes painted in a single CustomPainter (not widgets)?
+- [ ] Why do we broadcast operations, not full shape state?
+- [ ] Understand the difference between `ref.watch()` and `ref.read()`
+
+### Tasks to Complete
+
+- [ ] Run `flutter pub get` in the `flutter/` directory
+- [ ] Run the app and verify the canvas works with mock shapes
+- [ ] Try each tool (Select, Rectangle, Circle, Triangle, Text)
+- [ ] Create new shapes by double-tapping the canvas
+- [ ] Select shapes by tapping, drag to move/resize
+- [ ] Delete shapes with the delete button
+
+### Features to Build (You Drive)
+
+- [ ] Create `SessionServices` (interface + `MockSessionServices` implementation)
+- [ ] Create `SessionsPage` with a list of sessions
+- [ ] Create `SessionsVM` to manage session list state
+- [ ] Add navigation: `SessionsPage` → `CanvasPage`
+- [ ] Add "Create Session" functionality
+
+### Stretch Goals (Optional)
+
+- [ ] Implement pan gesture (two-finger drag updates `panOffset`)
+- [ ] Implement pinch-to-zoom (updates `zoom` in CanvasVM)
+- [ ] Add color picker for creating shapes
+- [ ] Add rotation handles
+
+### Architecture Questions
+
+| Question | Answer |
+|----------|--------|
+| Why no widget per shape? | Widgets are heavy. CustomPainter can render 1000s of shapes efficiently. |
+| Why operations, not state? | Operations are small. State is large. Broadcasting operations = less bandwidth. |
+| What if ops arrive out of order? | Operations carry `revision` numbers for ordering. |
+| What if I miss an operation? | Resync via snapshot (later phases). |
+| What happens with two users editing? | Presence lock (Phase 5) — only one user edits at a time. |
+
+---
+
 ## Rules Location
 
 ```
