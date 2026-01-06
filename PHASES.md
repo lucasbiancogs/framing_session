@@ -10,10 +10,11 @@ Track your progress through the Supabase Realtime learning phases.
 | 1     | Project & Environment Setup  | [x]    | 2026-01-02     |
 | 2     | Tables & Data Modeling       | [x]    | 2026-01-02     |
 | 3     | Database Realtime (CDC)      | [x]    | 2026-01-03     |
-| 4     | Flutter Local State & Canvas | [ ]    |                |
-| 5     | Presence                     | [ ]    |                |
-| 6     | Broadcast                    | [ ]    |                |
-| 7     | Integration                  | [ ]    |                |
+| 4     | Flutter Local State & Canvas | [x]    | 2026-01-06     |
+| 5     | Database Integration (CRUD)  | [ ]    |                |
+| 6     | Presence                     | [ ]    |                |
+| 7     | Broadcast                    | [ ]    |                |
+| 8     | Integration                  | [ ]    |                |
 
 > **Mark complete**: Change `[ ]` to `[x]` and add the date (e.g., `2024-01-15`)
 
@@ -38,9 +39,10 @@ Phase-specific rules are in `.cursor/rules/phase-N.mdc`.
 | 2     | Data modeling            | `sessions` table designed               |
 | 3     | Database CDC             | Realtime enabled, payloads understood   |
 | 4     | Flutter UI               | Canvas + shapes rendering (local)       |
-| 5     | Presence                 | User list, join/leave handling          |
-| 6     | Broadcast                | Cursor sharing                          |
-| 7     | Integration              | All systems working together            |
+| 5     | Database Integration     | DTOs, DataSources, Supabase CRUD        |
+| 6     | Presence                 | User list, join/leave handling          |
+| 7     | Broadcast                | Cursor sharing                          |
+| 8     | Integration              | All systems working together            |
 
 ---
 
@@ -176,7 +178,75 @@ ViewModel decides WHAT is true
 | Why operations, not state? | Operations are small. State is large. Broadcasting operations = less bandwidth. |
 | What if ops arrive out of order? | Operations carry `revision` numbers for ordering. |
 | What if I miss an operation? | Resync via snapshot (later phases). |
-| What happens with two users editing? | Presence lock (Phase 5) — only one user edits at a time. |
+| What happens with two users editing? | Presence lock (Phase 6) — only one user edits at a time. |
+
+---
+
+## Phase 5 — Database Integration (Supabase CRUD)
+
+### Learning Goals
+
+- Connect Flutter to Supabase for basic CRUD operations
+- Implement DTOs with proper conversion methods
+- Create DataSources that talk to Supabase
+- Replace mock services with Supabase-backed implementations
+
+### Tasks to Complete
+
+- [ ] Create `SessionDto` with all 4 methods (`fromMap`, `toMap`, `toEntity`, `fromEntity`)
+- [ ] Create `SupabaseSessionDataSource` implementing CRUD operations
+- [ ] Create `SessionServicesImpl` using the DataSource
+- [ ] Wire up providers in `global_providers.dart`
+- [ ] Test: Create a session from Flutter, see it in Supabase Dashboard
+- [ ] Create `ShapeDto` following the same pattern
+- [ ] Create `SupabaseShapeDataSource` for shapes CRUD
+- [ ] Create `ShapeServicesImpl` using the DataSource
+
+### Key Files to Create
+
+```
+flutter/lib/data/
+├── dtos/
+│   ├── session_dto.dart
+│   └── shape_dto.dart
+└── datasources/
+    ├── session_remote.dart
+    └── shape_remote.dart
+```
+
+### Verification
+
+- [ ] Create a session → appears in Supabase Dashboard
+- [ ] Delete a session → removed from Supabase Dashboard
+- [ ] Create a shape → appears in Supabase Dashboard
+- [ ] Refresh the app → data persists (not lost like mock data)
+
+---
+
+## Phase 6 — Presence
+
+- [ ] Display connected users in the UI
+- [ ] Handle join/leave events gracefully
+- [ ] Decide what user metadata to track
+
+---
+
+## Phase 7 — Broadcast
+
+- [ ] Broadcast cursor movement
+- [ ] Render other users' cursors
+- [ ] Handle stale/dropped messages safely
+- [ ] Implement throttling
+
+---
+
+## Phase 8 — Integration
+
+- [ ] Document responsibility per realtime tool
+- [ ] Implement full sync logic (join → hydrate → subscribe)
+- [ ] Identify potential race conditions in your app
+- [ ] Handle reconnection gracefully
+- [ ] Test with multiple clients
 
 ---
 
@@ -190,7 +260,8 @@ ViewModel decides WHAT is true
 ├── phase-2.mdc     ← Tables
 ├── phase-3.mdc     ← Database CDC
 ├── phase-4.mdc     ← Flutter Canvas
-├── phase-5.mdc     ← Presence
-├── phase-6.mdc     ← Broadcast
-└── phase-7.mdc     ← Integration
+├── phase-5.mdc     ← Database Integration (CRUD)
+├── phase-6.mdc     ← Presence
+├── phase-7.mdc     ← Broadcast
+└── phase-8.mdc     ← Integration
 ```

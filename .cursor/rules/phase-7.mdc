@@ -1,116 +1,124 @@
 ---
-description: Phase 7 — Integration (You Drive)
+description: Phase 7 — Broadcast
 ---
 
-# Phase 7 — Integration (You Drive)
+# Phase 7 — Broadcast
 
 ## Context (Standalone)
 
 Assume:
-- All three realtime tools exist and work separately
-- Database CDC for shapes
-- Presence for user list
-- Broadcast for cursors
+- Users are connected to a session
+- Presence is working (you know who's online)
+- Cursors need to be shared
 
 ## Learning Goals
 
-- Compose multiple realtime systems safely
-- Understand tradeoffs and edge cases
-- Identify and handle race conditions
+- Learn ephemeral messaging patterns
+- Avoid database abuse for high-frequency updates
+- Handle missed messages gracefully
 
 ## What Is Done (By Assistant)
 
-- Guidance and review only
-- Answer specific questions
-- Point out potential issues
+- One broadcast example (cursor movement)
+- Payload design explained
+- Error handling patterns
 
 ## What Is NOT Done
 
-- No implementation (you drive)
-- No architecture decisions (you decide)
+- No cursor rendering in UI (you build it)
+- No interpolation/smoothing (optimization)
 
-## Key Integration Challenges
+## Files That May Be Touched
 
-### 1. Channel Management
+- `supabase/realtime/broadcast.md`
+
+## Key Concepts
+
+### Sending a Broadcast
 
 ```dart
-// One channel per session, or multiple?
 final channel = supabase.channel('session:$sessionId');
 
-// Same channel can handle:
-// - Presence (track/untrack)
-// - Broadcast (send/receive)
-// - Postgres changes (if subscribed)
+// Send cursor position
+channel.sendBroadcastMessage(
+  event: 'cursor',
+  payload: {
+    'user_id': myUserId,
+    'x': cursorX,
+    'y': cursorY,
+    'timestamp': DateTime.now().millisecondsSinceEpoch,
+  },
+);
 ```
 
-### 2. Reconnection Handling
-
-When a client reconnects:
-
-| Tool         | What Happens                        | Your Action                    |
-|--------------|-------------------------------------|--------------------------------|
-| Database CDC | Nothing — query DB for current state| Fetch shapes on reconnect      |
-| Presence     | Receives `sync` with current users  | UI updates automatically       |
-| Broadcast    | Missed messages are gone            | Accept stale cursors disappear |
-
-### 3. Race Conditions
-
-**Scenario**: User A and User B both edit the same shape
-
-```
-Time 0: Shape has color = "red"
-Time 1: User A changes color to "blue" (sends to DB)
-Time 2: User B changes color to "green" (sends to DB)
-Time 3: Both receive CDC events... in what order?
-```
-
-**Solutions**:
-- Last-write-wins (accept it)
-- Timestamps + conflict resolution
-- Operational transforms (complex)
-
-### 4. Optimistic Updates
+### Receiving Broadcasts
 
 ```dart
-// Show change immediately
-setState(() => shape.color = newColor);
-
-// Then persist
-await supabase.from('shapes').update({'color': newColor}).eq('id', shape.id);
-
-// Handle failure
-// What if the update fails? Roll back?
+channel.onBroadcast(
+  event: 'cursor',
+  callback: (payload) {
+    final userId = payload['user_id'];
+    final x = payload['x'];
+    final y = payload['y'];
+    // Update cursor position for this user
+  },
+);
 ```
 
-### 5. Cleanup
+### Payload Design
 
-```dart
-@override
-void dispose() {
-  channel.untrack(); // Remove from presence
-  channel.unsubscribe(); // Stop receiving events
-  super.dispose();
+Keep payloads small — they're sent frequently:
+
+```json
+{
+  "user_id": "abc",
+  "x": 450,
+  "y": 320,
+  "t": 1705312200000
 }
 ```
 
-## Questions to Answer
+### Key Characteristics
 
-1. **Responsibility**: Which tool owns which data?
-2. **Sync**: How do you hydrate state on join?
-3. **Conflicts**: What happens with simultaneous edits?
-4. **Failure**: What if Supabase is temporarily unavailable?
-5. **Cleanup**: How do you clean up subscriptions?
+- **No persistence**: Messages are not stored
+- **No delivery guarantee**: Offline clients miss them
+- **No acknowledgment**: Fire and forget
+- **High frequency safe**: No database load
+
+### Handling Dropped Messages
+
+```dart
+// Stale cursor detection
+if (DateTime.now().millisecondsSinceEpoch - payload['t'] > 5000) {
+  // Message is too old, ignore it
+  return;
+}
+```
+
+### Throttling Sends
+
+```dart
+// Don't send on every mouse move
+Timer? _throttle;
+
+void onCursorMove(double x, double y) {
+  _throttle?.cancel();
+  _throttle = Timer(Duration(milliseconds: 16), () {
+    channel.sendBroadcastMessage(
+      event: 'cursor',
+      payload: {'x': x, 'y': y, ...},
+    );
+  });
+}
+```
 
 ## TODOs (For User)
 
-- [ ] Document responsibility per realtime tool
-- [ ] Implement full sync logic (join → hydrate → subscribe)
-- [ ] Identify potential race conditions in your app
-- [ ] Handle reconnection gracefully
-- [ ] Test with multiple clients
+- [ ] Broadcast cursor movement
+- [ ] Render other users' cursors
+- [ ] Handle stale/dropped messages safely
+- [ ] Implement throttling
 
 ---
 
-**⛔ PROJECT COMPLETE**
-
-You now understand the three realtime tools and when to use each.
+**⛔ STOP — Do not proceed to Phase 8 unless explicitly prompted.**

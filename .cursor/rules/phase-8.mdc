@@ -1,0 +1,116 @@
+---
+description: Phase 8 — Integration (You Drive)
+---
+
+# Phase 8 — Integration (You Drive)
+
+## Context (Standalone)
+
+Assume:
+- All three realtime tools exist and work separately
+- Database CDC for shapes
+- Presence for user list
+- Broadcast for cursors
+
+## Learning Goals
+
+- Compose multiple realtime systems safely
+- Understand tradeoffs and edge cases
+- Identify and handle race conditions
+
+## What Is Done (By Assistant)
+
+- Guidance and review only
+- Answer specific questions
+- Point out potential issues
+
+## What Is NOT Done
+
+- No implementation (you drive)
+- No architecture decisions (you decide)
+
+## Key Integration Challenges
+
+### 1. Channel Management
+
+```dart
+// One channel per session, or multiple?
+final channel = supabase.channel('session:$sessionId');
+
+// Same channel can handle:
+// - Presence (track/untrack)
+// - Broadcast (send/receive)
+// - Postgres changes (if subscribed)
+```
+
+### 2. Reconnection Handling
+
+When a client reconnects:
+
+| Tool         | What Happens                        | Your Action                    |
+|--------------|-------------------------------------|--------------------------------|
+| Database CDC | Nothing — query DB for current state| Fetch shapes on reconnect      |
+| Presence     | Receives `sync` with current users  | UI updates automatically       |
+| Broadcast    | Missed messages are gone            | Accept stale cursors disappear |
+
+### 3. Race Conditions
+
+**Scenario**: User A and User B both edit the same shape
+
+```
+Time 0: Shape has color = "red"
+Time 1: User A changes color to "blue" (sends to DB)
+Time 2: User B changes color to "green" (sends to DB)
+Time 3: Both receive CDC events... in what order?
+```
+
+**Solutions**:
+- Last-write-wins (accept it)
+- Timestamps + conflict resolution
+- Operational transforms (complex)
+
+### 4. Optimistic Updates
+
+```dart
+// Show change immediately
+setState(() => shape.color = newColor);
+
+// Then persist
+await supabase.from('shapes').update({'color': newColor}).eq('id', shape.id);
+
+// Handle failure
+// What if the update fails? Roll back?
+```
+
+### 5. Cleanup
+
+```dart
+@override
+void dispose() {
+  channel.untrack(); // Remove from presence
+  channel.unsubscribe(); // Stop receiving events
+  super.dispose();
+}
+```
+
+## Questions to Answer
+
+1. **Responsibility**: Which tool owns which data?
+2. **Sync**: How do you hydrate state on join?
+3. **Conflicts**: What happens with simultaneous edits?
+4. **Failure**: What if Supabase is temporarily unavailable?
+5. **Cleanup**: How do you clean up subscriptions?
+
+## TODOs (For User)
+
+- [ ] Document responsibility per realtime tool
+- [ ] Implement full sync logic (join → hydrate → subscribe)
+- [ ] Identify potential race conditions in your app
+- [ ] Handle reconnection gracefully
+- [ ] Test with multiple clients
+
+---
+
+**⛔ PROJECT COMPLETE**
+
+You now understand the three realtime tools and when to use each.

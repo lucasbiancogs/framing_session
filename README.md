@@ -47,8 +47,9 @@ This is a restartable, phase-based learning system:
 | 2 | Tables & Data Modeling | `supabase/schema/sessions.sql` |
 | 3 | Database Realtime (CDC) | `supabase/realtime/README.md` |
 | 4 | Flutter Local State & Canvas | `flutter/lib/ui/`, `flutter/lib/features/` |
-| 5 | Presence | `supabase/realtime/presence.md` |
-| 6 | Broadcast | `supabase/realtime/broadcast.md` |
-| 7 | Integration | You drive |
+| 5 | Database Integration (CRUD) | `flutter/lib/data/`, DTOs & DataSources |
+| 6 | Presence | `supabase/realtime/presence.md` |
+| 7 | Broadcast | `supabase/realtime/broadcast.md` |
+| 8 | Integration | You drive |
 
 ---

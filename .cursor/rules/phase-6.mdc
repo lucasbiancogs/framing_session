@@ -1,123 +1,105 @@
 ---
-description: Phase 6 — Broadcast
+description: Phase 6 — Presence
 ---
 
-# Phase 6 — Broadcast
+# Phase 6 — Presence
 
 ## Context (Standalone)
 
 Assume:
-- Users are connected to a session
-- Presence is working (you know who's online)
-- Cursors need to be shared
+- Sessions table exists
+- Flutter canvas exists with Supabase CRUD working
+- Users are anonymous (no auth yet)
 
 ## Learning Goals
 
-- Learn ephemeral messaging patterns
-- Avoid database abuse for high-frequency updates
-- Handle missed messages gracefully
+- Understand presence vs persistence
+- Track who is currently connected
+- Handle join/leave events cleanly
 
 ## What Is Done (By Assistant)
 
-- One broadcast example (cursor movement)
-- Payload design explained
-- Error handling patterns
+- Presence concept explained with examples
+- Example presence channel setup
+- Payload structure documented
 
 ## What Is NOT Done
 
-- No cursor rendering in UI (you build it)
-- No interpolation/smoothing (optimization)
+- No UI implementation (you build the user list)
+- No cursor position in presence (that's Broadcast)
 
 ## Files That May Be Touched
 
-- `supabase/realtime/broadcast.md`
+- `supabase/realtime/presence.md`
 
 ## Key Concepts
 
-### Sending a Broadcast
+### What Presence Tracks
+
+Each connected user shares their state:
 
 ```dart
 final channel = supabase.channel('session:$sessionId');
 
-// Send cursor position
-channel.sendBroadcastMessage(
-  event: 'cursor',
-  payload: {
-    'user_id': myUserId,
-    'x': cursorX,
-    'y': cursorY,
-    'timestamp': DateTime.now().millisecondsSinceEpoch,
-  },
-);
+channel.onPresenceSync((payload) {
+  // Full state of all connected users
+});
+
+channel.onPresenceJoin((payload) {
+  // A new user connected
+});
+
+channel.onPresenceLeave((payload) {
+  // A user disconnected
+});
+
+await channel.subscribe((status, error) async {
+  if (status == RealtimeSubscribeStatus.subscribed) {
+    await channel.track({
+      'user_id': myUserId,
+      'name': 'Alice',
+      'color': '#FF5733',
+    });
+  }
+});
 ```
 
-### Receiving Broadcasts
-
-```dart
-channel.onBroadcast(
-  event: 'cursor',
-  callback: (payload) {
-    final userId = payload['user_id'];
-    final x = payload['x'];
-    final y = payload['y'];
-    // Update cursor position for this user
-  },
-);
-```
-
-### Payload Design
-
-Keep payloads small — they're sent frequently:
+### Presence State Example
 
 ```json
 {
-  "user_id": "abc",
-  "x": 450,
-  "y": 320,
-  "t": 1705312200000
+  "user_abc": {
+    "user_id": "abc",
+    "name": "Alice",
+    "color": "#FF5733",
+    "online_at": "2024-01-15T10:30:00Z"
+  },
+  "user_xyz": {
+    "user_id": "xyz",
+    "name": "Bob", 
+    "color": "#33FF57",
+    "online_at": "2024-01-15T10:31:00Z"
+  }
 }
 ```
 
 ### Key Characteristics
 
-- **No persistence**: Messages are not stored
-- **No delivery guarantee**: Offline clients miss them
-- **No acknowledgment**: Fire and forget
-- **High frequency safe**: No database load
+- **Ephemeral**: State is gone when user disconnects
+- **Automatic cleanup**: No manual removal needed
+- **Sync on join**: New subscribers get current state immediately
 
-### Handling Dropped Messages
+### What NOT to Put in Presence
 
-```dart
-// Stale cursor detection
-if (DateTime.now().millisecondsSinceEpoch - payload['t'] > 5000) {
-  // Message is too old, ignore it
-  return;
-}
-```
-
-### Throttling Sends
-
-```dart
-// Don't send on every mouse move
-Timer? _throttle;
-
-void onCursorMove(double x, double y) {
-  _throttle?.cancel();
-  _throttle = Timer(Duration(milliseconds: 16), () {
-    channel.sendBroadcastMessage(
-      event: 'cursor',
-      payload: {'x': x, 'y': y, ...},
-    );
-  });
-}
-```
+- Cursor positions (too frequent, use Broadcast)
+- Persistent data (use Database)
+- Large payloads (presence syncs to everyone)
 
 ## TODOs (For User)
 
-- [ ] Broadcast cursor movement
-- [ ] Render other users' cursors
-- [ ] Handle stale/dropped messages safely
-- [ ] Implement throttling
+- [ ] Display connected users in the UI
+- [ ] Handle join/leave events gracefully
+- [ ] Decide what user metadata to track
 
 ---
 

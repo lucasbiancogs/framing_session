@@ -1,105 +1,410 @@
 ---
-description: Phase 5 — Presence
+description: Phase 5 — Database Integration (Supabase CRUD)
 ---
 
-# Phase 5 — Presence
+# Phase 5 — Database Integration (Supabase CRUD)
 
 ## Context (Standalone)
 
 Assume:
-- Sessions table exists
-- Flutter canvas exists
-- Users are anonymous (no auth yet)
+- Supabase project exists with `sessions` and `shapes` tables
+- Flutter project exists with mock service implementations
+- No realtime listeners yet (just basic CRUD)
 
 ## Learning Goals
 
-- Understand presence vs persistence
-- Track who is currently connected
-- Handle join/leave events cleanly
+- Connect Flutter to Supabase for basic CRUD operations
+- Implement DTOs with proper conversion methods
+- Create DataSources that talk to Supabase
+- Replace mock services with Supabase-backed implementations
 
 ## What Is Done (By Assistant)
 
-- Presence concept explained with examples
-- Example presence channel setup
-- Payload structure documented
+- One complete DTO example (`SessionDto`)
+- One complete DataSource example (`SupabaseSessionDataSource`)
+- One complete Service implementation example (`SessionServicesImpl`)
+- Provider wiring explanation
 
 ## What Is NOT Done
 
-- No UI implementation (you build the user list)
-- No cursor position in presence (that's Broadcast)
+- No shapes implementation (you build it following the pattern)
+- No realtime subscriptions (that's Phase 6+)
+- No error handling beyond basics
 
 ## Files That May Be Touched
 
-- `supabase/realtime/presence.md`
+- `flutter/lib/data/dtos/session_dto.dart`
+- `flutter/lib/data/datasources/session_remote.dart`
+- `flutter/lib/domain/services/session_services.dart`
+- `flutter/lib/presentation/view_models/global_providers.dart`
 
 ## Key Concepts
 
-### What Presence Tracks
+### The Data Flow
 
-Each connected user shares their state:
-
-```dart
-final channel = supabase.channel('session:$sessionId');
-
-channel.onPresenceSync((payload) {
-  // Full state of all connected users
-});
-
-channel.onPresenceJoin((payload) {
-  // A new user connected
-});
-
-channel.onPresenceLeave((payload) {
-  // A user disconnected
-});
-
-await channel.subscribe((status, error) async {
-  if (status == RealtimeSubscribeStatus.subscribed) {
-    await channel.track({
-      'user_id': myUserId,
-      'name': 'Alice',
-      'color': '#FF5733',
-    });
-  }
-});
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Presentation Layer                            │
+│   ┌─────────┐         ┌───────────┐                             │
+│   │  Page   │ watch   │ ViewModel │                             │
+│   │         │◄────────│           │                             │
+│   └─────────┘         └─────┬─────┘                             │
+└─────────────────────────────┼───────────────────────────────────┘
+                              │ calls
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Domain Layer                                │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │                    Services                              │   │
+│   │   - Calls DataSource                                     │   │
+│   │   - Converts DTOs ↔ Entities                            │   │
+│   │   - Returns Either<Exception, Entity>                    │   │
+│   └─────────────────────────┬───────────────────────────────┘   │
+└─────────────────────────────┼───────────────────────────────────┘
+                              │ uses
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Data Layer                                 │
+│   ┌─────────────┐          ┌────────────────────────────────┐   │
+│   │     DTO     │◄────────►│         DataSource             │   │
+│   │  fromMap()  │          │   (SupabaseSessionDataSource)  │   │
+│   │  toMap()    │          │   - Talks to Supabase          │   │
+│   │  toEntity() │          │   - Returns DTOs               │   │
+│   │ fromEntity()│          └──────────────┬─────────────────┘   │
+│   └─────────────┘                         │                      │
+└───────────────────────────────────────────┼─────────────────────┘
+                                            │
+                                            ▼
+                                   ┌──────────────┐
+                                   │   Supabase   │
+                                   │  (Postgres)  │
+                                   └──────────────┘
 ```
 
-### Presence State Example
+### Why DTOs?
 
-```json
-{
-  "user_abc": {
-    "user_id": "abc",
-    "name": "Alice",
-    "color": "#FF5733",
-    "online_at": "2024-01-15T10:30:00Z"
-  },
-  "user_xyz": {
-    "user_id": "xyz",
-    "name": "Bob", 
-    "color": "#33FF57",
-    "online_at": "2024-01-15T10:31:00Z"
+DTOs (Data Transfer Objects) separate database schema from domain logic:
+
+- **Database changes** don't break your domain entities
+- **Type safety** — explicit conversion catches errors early
+- **Flexibility** — different field names, computed fields, etc.
+
+### DTO Pattern (4 Required Methods)
+
+```dart
+// flutter/lib/data/dtos/session_dto.dart
+
+class SessionDto {
+  const SessionDto({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  /// Create from database map (Supabase response)
+  factory SessionDto.fromMap(Map<String, dynamic> map) {
+    return SessionDto(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      createdAt: map['created_at'] != null
+          ? DateTime.parse(map['created_at'] as String)
+          : null,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.parse(map['updated_at'] as String)
+          : null,
+    );
+  }
+
+  /// Convert to database map (for INSERT/UPDATE)
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      // created_at and updated_at are set by database defaults
+    };
+  }
+
+  /// Convert to domain entity
+  Session toEntity() {
+    return Session(
+      id: id,
+      name: name,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+
+  /// Create from domain entity
+  factory SessionDto.fromEntity(Session entity) {
+    return SessionDto(
+      id: entity.id,
+      name: entity.name,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    );
   }
 }
 ```
 
-### Key Characteristics
+### DataSource Pattern
 
-- **Ephemeral**: State is gone when user disconnects
-- **Automatic cleanup**: No manual removal needed
-- **Sync on join**: New subscribers get current state immediately
+DataSources handle all Supabase communication and return DTOs:
 
-### What NOT to Put in Presence
+```dart
+// flutter/lib/data/datasources/session_remote.dart
 
-- Cursor positions (too frequent, use Broadcast)
-- Persistent data (use Database)
-- Large payloads (presence syncs to everyone)
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../dtos/session_dto.dart';
+
+/// Interface for session data operations
+abstract class SessionRemoteDataSource {
+  Future<List<SessionDto>> getAllSessions();
+  Future<SessionDto> getSessionById(String id);
+  Future<SessionDto> createSession(SessionDto session);
+  Future<void> deleteSession(String id);
+}
+
+/// Supabase implementation
+class SupabaseSessionDataSource implements SessionRemoteDataSource {
+  SupabaseSessionDataSource(this._client);
+
+  final SupabaseClient _client;
+
+  @override
+  Future<List<SessionDto>> getAllSessions() async {
+    final response = await _client
+        .from('sessions')
+        .select()
+        .order('updated_at', ascending: false);
+
+    return (response as List)
+        .map((data) => SessionDto.fromMap(data as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<SessionDto> getSessionById(String id) async {
+    final response = await _client
+        .from('sessions')
+        .select()
+        .eq('id', id)
+        .single();
+
+    return SessionDto.fromMap(response);
+  }
+
+  @override
+  Future<SessionDto> createSession(SessionDto session) async {
+    final response = await _client
+        .from('sessions')
+        .insert(session.toMap())
+        .select()
+        .single();
+
+    return SessionDto.fromMap(response);
+  }
+
+  @override
+  Future<void> deleteSession(String id) async {
+    await _client.from('sessions').delete().eq('id', id);
+  }
+}
+```
+
+### Service Implementation (Supabase-backed)
+
+Replace the mock implementation with a real one:
+
+```dart
+// flutter/lib/domain/services/session_services.dart
+// Add this implementation alongside MockSessionServices
+
+class SessionServicesImpl implements SessionServices {
+  SessionServicesImpl(this._dataSource);
+
+  final SessionRemoteDataSource _dataSource;
+
+  @override
+  Future<Either<BaseException, List<Session>>> getAllSessions() async {
+    try {
+      final dtos = await _dataSource.getAllSessions();
+      final sessions = dtos.map((dto) => dto.toEntity()).toList();
+      return right(sessions);
+    } catch (e) {
+      return left(SessionException.unknown(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<BaseException, Session>> getSessionById(String id) async {
+    try {
+      final dto = await _dataSource.getSessionById(id);
+      return right(dto.toEntity());
+    } catch (e) {
+      if (e.toString().contains('No rows found')) {
+        return left(SessionException.notFound(id));
+      }
+      return left(SessionException.unknown(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<BaseException, Session>> createSession({
+    required String name,
+  }) async {
+    try {
+      final dto = SessionDto(
+        id: const Uuid().v4(),
+        name: name,
+        createdAt: null, // Set by database
+        updatedAt: null, // Set by database
+      );
+
+      final createdDto = await _dataSource.createSession(dto);
+      return right(createdDto.toEntity());
+    } catch (e) {
+      return left(SessionException.unknown(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<BaseException, void>> deleteSession(String id) async {
+    try {
+      await _dataSource.deleteSession(id);
+      return right(null);
+    } catch (e) {
+      return left(SessionException.unknown(e.toString()));
+    }
+  }
+}
+```
+
+### Provider Wiring
+
+Update `global_providers.dart` to use Supabase implementations:
+
+```dart
+// flutter/lib/presentation/view_models/global_providers.dart
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+// Supabase client
+final supabaseClient = Provider<SupabaseClient>(
+  (ref) => Supabase.instance.client,
+  name: 'supabaseClient',
+);
+
+// DataSources
+final sessionDataSource = Provider<SessionRemoteDataSource>(
+  (ref) => SupabaseSessionDataSource(ref.read(supabaseClient)),
+  name: 'sessionDataSource',
+);
+
+// Services (switch between Mock and Supabase)
+final sessionServices = Provider<SessionServices>(
+  (ref) => SessionServicesImpl(ref.read(sessionDataSource)),
+  // For local testing without Supabase:
+  // (ref) => MockSessionServices(),
+  name: 'sessionServices',
+);
+```
+
+## Common Supabase Operations
+
+### SELECT (Read)
+
+```dart
+// Get all rows
+final response = await _client.from('sessions').select();
+
+// Get single row by ID
+final response = await _client
+    .from('sessions')
+    .select()
+    .eq('id', id)
+    .single();
+
+// Get with filter
+final response = await _client
+    .from('shapes')
+    .select()
+    .eq('session_id', sessionId);
+
+// Order results
+final response = await _client
+    .from('sessions')
+    .select()
+    .order('created_at', ascending: false);
+```
+
+### INSERT (Create)
+
+```dart
+// Insert and return the created row
+final response = await _client
+    .from('sessions')
+    .insert({'id': uuid, 'name': name})
+    .select()
+    .single();
+```
+
+### UPDATE
+
+```dart
+// Update specific fields
+final response = await _client
+    .from('shapes')
+    .update({'x': newX, 'y': newY})
+    .eq('id', shapeId)
+    .select()
+    .single();
+```
+
+### DELETE
+
+```dart
+// Delete by ID
+await _client.from('sessions').delete().eq('id', id);
+```
+
+## Error Handling
+
+Supabase throws `PostgrestException` on errors:
+
+```dart
+try {
+  final response = await _client.from('sessions').select().eq('id', id).single();
+  return SessionDto.fromMap(response);
+} on PostgrestException catch (e) {
+  if (e.code == 'PGRST116') {
+    throw SessionNotFoundException(id);
+  }
+  rethrow;
+}
+```
+
+Common error codes:
+- `PGRST116` — No rows found (for `.single()`)
+- `23503` — Foreign key violation
+- `23505` — Unique constraint violation
 
 ## TODOs (For User)
 
-- [ ] Display connected users in the UI
-- [ ] Handle join/leave events gracefully
-- [ ] Decide what user metadata to track
+- [ ] Create `SessionDto` with all 4 methods
+- [ ] Create `SupabaseSessionDataSource` implementing CRUD
+- [ ] Create `SessionServicesImpl` using the DataSource
+- [ ] Wire up providers in `global_providers.dart`
+- [ ] Test: Create a session, see it in Supabase Dashboard
+- [ ] Create `ShapeDto` following the same pattern
+- [ ] Create `SupabaseShapeDataSource` for shapes CRUD
+- [ ] Create `ShapeServicesImpl` using the DataSource
 
 ---
 
