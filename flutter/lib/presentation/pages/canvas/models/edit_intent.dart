@@ -4,13 +4,13 @@ import 'package:flutter/foundation.dart';
 /// Resize handle positions around a shape's bounding box.
 enum ResizeHandle {
   topLeft,
-  topCenter,
   topRight,
+  bottomLeft,
+  bottomRight,
+  topCenter,
   centerLeft,
   centerRight,
-  bottomLeft,
   bottomCenter,
-  bottomRight,
 }
 
 /// Represents the user's intended edit action based on where they touched.
@@ -40,6 +40,9 @@ class ResizeIntent extends EditIntent {
 
   @override
   List<Object?> get props => [handle];
+
+  @override
+  String toString() => 'ResizeIntent(handle: $handle)';
 }
 
 /// User intends to rotate the shape.

@@ -2,8 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart' show Colors, CustomPainter;
 
-import '../../../../domain/entities/shape.dart';
-import '../shapes/canvas_shape.dart';
+import '../models/canvas_shape.dart';
 
 /// A single CustomPainter that renders all shapes on the whiteboard.
 ///
@@ -24,7 +23,7 @@ class WhiteboardPainter extends CustomPainter {
     this.showGrid = true,
   });
 
-  final List<Shape> shapes;
+  final List<CanvasShape> shapes;
   final String? selectedShapeId;
   final Offset panOffset;
   final double zoom;
@@ -42,23 +41,14 @@ class WhiteboardPainter extends CustomPainter {
       _paintGrid(canvas, size);
     }
 
-    // Convert domain shapes to canvas shapes and paint them
-    CanvasShape? selectedCanvasShape;
-
     for (final shape in shapes) {
-      final canvasShape = createCanvasShape(shape);
       final isSelected = shape.id == selectedShapeId;
 
-      canvasShape.paint(canvas, isSelected: isSelected);
+      shape.paint(canvas, isSelected: isSelected);
 
       if (isSelected) {
-        selectedCanvasShape = canvasShape;
+        shape.paintHandles(canvas);
       }
-    }
-
-    // Draw selection handles on top (after all shapes)
-    if (selectedCanvasShape != null) {
-      selectedCanvasShape.paintHandles(canvas);
     }
 
     canvas.restore();
@@ -67,9 +57,9 @@ class WhiteboardPainter extends CustomPainter {
   void _paintGrid(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.white.withValues(alpha: 0.05)
-      ..strokeWidth = 1;
+      ..strokeWidth = 0.5;
 
-    const gridSize = 50.0;
+    const gridSize = 25.0;
 
     // Adjust for viewport transform
     final adjustedSize = Size(

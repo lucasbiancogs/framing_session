@@ -1,6 +1,8 @@
 import 'dart:ui' show Offset;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -8,7 +10,7 @@ import 'canvas_vm.dart';
 import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 import 'painters/whiteboard_painter.dart';
-import 'shapes/canvas_shape.dart';
+import 'models/canvas_shape.dart';
 
 /// The main whiteboard canvas widget.
 ///
@@ -35,6 +37,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   String? _activeShapeId;
   EditIntent? _activeIntent;
   Offset? _lastPointerPosition;
+  SystemMouseCursor? _hoverCursor;
 
   @override
   Widget build(BuildContext context) {
@@ -52,14 +55,18 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       child: GestureDetector(
         // Double-tap to create shape
         onDoubleTapDown: (details) => _handleDoubleTap(details, state),
-        child: CustomPaint(
-          painter: WhiteboardPainter(
-            shapes: state.shapes,
-            selectedShapeId: state.selectedShapeId,
-            panOffset: state.panOffset,
-            zoom: state.zoom,
+        child: MouseRegion(
+          cursor: _hoverCursor ?? SystemMouseCursors.basic,
+          onHover: (event) => _handlePointerHover(event, state),
+          child: CustomPaint(
+            painter: WhiteboardPainter(
+              shapes: state.shapes.map(createCanvasShape).toList(),
+              selectedShapeId: state.selectedShapeId,
+              panOffset: state.panOffset,
+              zoom: state.zoom,
+            ),
+            size: Size.infinite,
           ),
-          size: Size.infinite,
         ),
       ),
     );
@@ -102,7 +109,6 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     final delta = position - (_lastPointerPosition ?? position);
     _lastPointerPosition = position;
 
-    // Convert intent + delta to operation
     final operation = _createOperation(
       shapeId: _activeShapeId!,
       intent: _activeIntent!,
@@ -121,6 +127,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handleDoubleTap(TapDownDetails details, CanvasLoaded state) {
+    // TODO(lucasbiancogs): Revisit this creation process
     final position = _toCanvasPosition(details.localPosition, state);
     final tool = state.currentTool;
 
@@ -130,6 +137,36 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     ref
         .read(canvasVM(widget.sessionId).notifier)
         .createShapeAt(position: position, tool: tool);
+  }
+
+  void _handlePointerHover(PointerHoverEvent event, CanvasLoaded state) {
+    final position = _toCanvasPosition(event.localPosition, state);
+
+    for (final shape in state.shapes.reversed) {
+      final canvasShape = createCanvasShape(shape);
+      final intent = canvasShape.getEditIntent(position);
+
+      if (intent != null) {
+        final newCursor = switch (intent) {
+          final ResizeIntent intent => intent.handle.systemMouseCursor,
+          _ => SystemMouseCursors.basic,
+        };
+
+        if (newCursor != _hoverCursor) {
+          setState(() {
+            _hoverCursor = newCursor;
+          });
+        }
+
+        return;
+      }
+    }
+
+    if (_hoverCursor != null) {
+      setState(() {
+        _hoverCursor = null;
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -157,7 +194,22 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
         handle: handle,
         delta: delta,
       ),
-      RotateIntent() => null, // TODO: Implement rotation
+      RotateIntent() => null,
+    };
+  }
+}
+
+extension on ResizeHandle {
+  SystemMouseCursor get systemMouseCursor {
+    return switch (this) {
+      ResizeHandle.centerLeft ||
+      ResizeHandle.centerRight => SystemMouseCursors.resizeLeftRight,
+      ResizeHandle.topLeft ||
+      ResizeHandle.bottomRight => SystemMouseCursors.resizeUpLeftDownRight,
+      ResizeHandle.topCenter ||
+      ResizeHandle.bottomCenter => SystemMouseCursors.resizeUpDown,
+      ResizeHandle.topRight ||
+      ResizeHandle.bottomLeft => SystemMouseCursors.resizeUpRightDownLeft,
     };
   }
 }

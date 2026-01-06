@@ -5,8 +5,8 @@ import 'package:flutter/painting.dart'
 
 import '../../../../domain/entities/shape.dart' as domain;
 import '../../../../domain/entities/shape_type.dart';
-import '../models/edit_intent.dart';
-import '../models/edit_operation.dart';
+import 'edit_intent.dart';
+import 'edit_operation.dart';
 
 /// Abstract base class for canvas shapes.
 ///
@@ -37,7 +37,7 @@ abstract class CanvasShape {
   /// Check if a point hits the shape body.
   bool hitTest(Offset point);
 
-  double get handleSize => 40;
+  double get handleSize => 6;
 
   /// Determine what kind of edit the user intends based on touch position.
   ///
@@ -102,17 +102,13 @@ abstract class CanvasShape {
 
   /// Check if a point hits a resize handle.
   bool hitTestHandle(Offset point, ResizeHandle handle) {
-    print('@debug hitTestHandle: $point, $handle');
-    print(
-      '@debug bounds: left:${bounds.left}, top:${bounds.top}, right:${bounds.right}, bottom:${bounds.bottom}',
-    );
     switch (handle) {
       case ResizeHandle.topRight ||
           ResizeHandle.topLeft ||
           ResizeHandle.bottomRight ||
           ResizeHandle.bottomLeft:
         final handleRect = getHandleRect(handle);
-        return handleRect.contains(point);
+        return handleRect.inflate(2).contains(point);
       case ResizeHandle.topCenter:
         return point.dy <= bounds.top + handleSize / 2 &&
             point.dy >= bounds.top - handleSize / 2 &&
@@ -129,8 +125,8 @@ abstract class CanvasShape {
             point.dy > bounds.top + handleSize / 2 &&
             point.dy < bounds.bottom - handleSize / 2;
       case ResizeHandle.centerRight:
-        return point.dx >= bounds.right + handleSize / 2 &&
-            point.dx <= bounds.right - handleSize / 2 &&
+        return point.dx <= bounds.right + handleSize / 2 &&
+            point.dx >= bounds.right - handleSize / 2 &&
             point.dy > bounds.top + handleSize / 2 &&
             point.dy < bounds.bottom - handleSize / 2;
     }
@@ -527,21 +523,7 @@ class TextCanvasShape extends CanvasShape {
   void paint(Canvas canvas, {bool isSelected = false}) {
     final color = parseColor(entity.color);
 
-    // Background
-    final bgPaint = Paint()
-      ..color = color.withValues(alpha: 0.2)
-      ..style = PaintingStyle.fill;
-
     final rrect = RRect.fromRectAndRadius(bounds, const Radius.circular(4));
-
-    if (entity.rotation != 0) {
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(entity.rotation);
-      canvas.translate(-center.dx, -center.dy);
-    }
-
-    canvas.drawRRect(rrect, bgPaint);
 
     // Text
     final textSpan = TextSpan(

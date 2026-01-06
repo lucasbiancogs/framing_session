@@ -42,7 +42,7 @@ class WhiteboardApp extends StatelessWidget {
           onSurface: Colors.white,
         ),
         appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
-        textTheme: GoogleFonts.robotoMonoTextTheme(ThemeData.dark().textTheme),
+        textTheme: GoogleFonts.robotoFlexTextTheme(ThemeData.dark().textTheme),
       ),
       // TODO: Replace with sessions list page + routing
       home: const CanvasPage(sessionId: 'session-1'),
