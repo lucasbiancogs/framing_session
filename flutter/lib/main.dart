@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app/supabase_config.dart';
 import 'domain/services/shape_services.dart';
@@ -42,7 +41,6 @@ class WhiteboardApp extends StatelessWidget {
           onSurface: Colors.white,
         ),
         appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
-        textTheme: GoogleFonts.robotoFlexTextTheme(ThemeData.dark().textTheme),
       ),
       // TODO: Replace with sessions list page + routing
       home: const CanvasPage(sessionId: 'session-1'),

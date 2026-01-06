@@ -98,3 +98,19 @@ class DeleteOperation extends EditOperation {
     super.revision,
   });
 }
+
+/// Update a shape's text content.
+class TextEditOperation extends EditOperation {
+  const TextEditOperation({
+    required super.opId,
+    required super.shapeId,
+    required this.text,
+    super.revision,
+  });
+
+  /// The new text content for the shape.
+  final String text;
+
+  @override
+  List<Object?> get props => [...super.props, text];
+}

@@ -136,22 +136,22 @@ ViewModel decides WHAT is true
 
 ### Concepts to Understand
 
-- [ ] Read the architecture files and understand the data flow:
+- [x] Read the architecture files and understand the data flow:
   - `WhiteboardCanvas` → hit test → `EditIntent` → `EditOperation` → `CanvasVM.applyOperation()`
   - **Local state** (CanvasLoaded): `panOffset`, `zoom`, `currentTool`, `selectedShapeId`
   - **Shared state** (CanvasLoaded): `shapes` — will come from DB in Phase 5+
-- [ ] Why are shapes painted in a single CustomPainter (not widgets)?
-- [ ] Why do we broadcast operations, not full shape state?
-- [ ] Understand the difference between `ref.watch()` and `ref.read()`
+- [x] Why are shapes painted in a single CustomPainter (not widgets)?
+- [x] Why do we broadcast operations, not full shape state?
+- [x] Understand the difference between `ref.watch()` and `ref.read()`
 
 ### Tasks to Complete
 
-- [ ] Run `flutter pub get` in the `flutter/` directory
-- [ ] Run the app and verify the canvas works with mock shapes
-- [ ] Try each tool (Select, Rectangle, Circle, Triangle, Text)
-- [ ] Create new shapes by double-tapping the canvas
-- [ ] Select shapes by tapping, drag to move/resize
-- [ ] Delete shapes with the delete button
+- [x] Run `flutter pub get` in the `flutter/` directory
+- [x] Run the app and verify the canvas works with mock shapes
+- [x] Try each tool (Select, Rectangle, Circle, Triangle, Text)
+- [x] Create new shapes by double-tapping the canvas
+- [x] Select shapes by tapping, drag to move/resize
+- [x] Delete shapes with the delete button
 
 ### Features to Build (You Drive)
 

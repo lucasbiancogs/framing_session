@@ -73,7 +73,7 @@ class MockShapeServices implements ShapeServices {
       y: 100,
       width: 120,
       height: 100,
-      color: '#4ECDC4',
+      color: '#FFFFFF',
       rotation: 0,
     ),
   ];

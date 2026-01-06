@@ -1,7 +1,4 @@
-import 'dart:ui';
-
-import 'package:flutter/painting.dart'
-    show TextDirection, TextPainter, TextSpan, TextStyle;
+import 'package:flutter/material.dart';
 
 import '../../../../domain/entities/shape.dart' as domain;
 import '../../../../domain/entities/shape_type.dart';
@@ -50,7 +47,14 @@ abstract class CanvasShape {
   CanvasShape apply(EditOperation operation);
 
   /// Paint this shape onto the canvas.
-  void paint(Canvas canvas, {bool isSelected = false});
+  ///
+  /// [isEditingText] is true when this shape's text is being edited
+  /// via the TextField overlay — in that case, skip rendering text.
+  void paint(
+    Canvas canvas, {
+    bool isSelected = false,
+    bool isEditingText = false,
+  });
 
   /// Paint selection handles around this shape.
   void paintHandles(Canvas canvas);
@@ -239,14 +243,17 @@ abstract class CanvasShape {
   }
 
   /// Parse a hex color string to a Color.
-  Color parseColor(String hexColor) {
+  Color get color {
     try {
-      final hex = hexColor.replaceFirst('#', '');
+      final hex = entity.color.replaceFirst('#', '');
       return Color(int.parse('FF$hex', radix: 16));
     } catch (_) {
       return const Color(0xFF808080);
     }
   }
+
+  Color get textColor =>
+      color.computeLuminance() > 0.4 ? Colors.black : Colors.white;
 }
 
 // =============================================================================
@@ -301,9 +308,13 @@ class RectangleCanvasShape extends CanvasShape {
   }
 
   @override
-  void paint(Canvas canvas, {bool isSelected = false}) {
+  void paint(
+    Canvas canvas, {
+    bool isSelected = false,
+    bool isEditingText = false,
+  }) {
     final paint = Paint()
-      ..color = parseColor(entity.color)
+      ..color = color
       ..style = PaintingStyle.fill;
 
     final rrect = RRect.fromRectAndRadius(bounds, const Radius.circular(4));
@@ -317,6 +328,11 @@ class RectangleCanvasShape extends CanvasShape {
 
     canvas.drawRRect(rrect, paint);
 
+    // Draw text content if not editing
+    if (!isEditingText && entity.text != null && entity.text!.isNotEmpty) {
+      _paintText(canvas);
+    }
+
     if (isSelected) {
       final borderPaint = Paint()
         ..color = const Color(0xFFFFFFFF)
@@ -328,6 +344,28 @@ class RectangleCanvasShape extends CanvasShape {
     if (entity.rotation != 0) {
       canvas.restore();
     }
+  }
+
+  void _paintText(Canvas canvas) {
+    final textSpan = TextSpan(
+      text: entity.text,
+      style: TextStyle(color: textColor, fontSize: 14),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+
+    textPainter.layout(maxWidth: entity.width - 16);
+    textPainter.paint(
+      canvas,
+      Offset(
+        entity.x + (entity.width - textPainter.width) / 2,
+        entity.y + (entity.height - textPainter.height) / 2,
+      ),
+    );
   }
 
   @override
@@ -381,12 +419,21 @@ class CircleCanvasShape extends CanvasShape {
   }
 
   @override
-  void paint(Canvas canvas, {bool isSelected = false}) {
+  void paint(
+    Canvas canvas, {
+    bool isSelected = false,
+    bool isEditingText = false,
+  }) {
     final paint = Paint()
-      ..color = parseColor(entity.color)
+      ..color = color
       ..style = PaintingStyle.fill;
 
     canvas.drawOval(bounds, paint);
+
+    // Draw text content if not editing
+    if (!isEditingText && entity.text != null && entity.text!.isNotEmpty) {
+      _paintText(canvas);
+    }
 
     if (isSelected) {
       final borderPaint = Paint()
@@ -395,6 +442,28 @@ class CircleCanvasShape extends CanvasShape {
         ..strokeWidth = 2;
       canvas.drawOval(bounds, borderPaint);
     }
+  }
+
+  void _paintText(Canvas canvas) {
+    final textSpan = TextSpan(
+      text: entity.text,
+      style: const TextStyle(color: Color(0xFFFFFFFF), fontSize: 14),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+
+    textPainter.layout(maxWidth: entity.width - 16);
+    textPainter.paint(
+      canvas,
+      Offset(
+        entity.x + (entity.width - textPainter.width) / 2,
+        entity.y + (entity.height - textPainter.height) / 2,
+      ),
+    );
   }
 
   @override
@@ -451,9 +520,13 @@ class TriangleCanvasShape extends CanvasShape {
   }
 
   @override
-  void paint(Canvas canvas, {bool isSelected = false}) {
+  void paint(
+    Canvas canvas, {
+    bool isSelected = false,
+    bool isEditingText = false,
+  }) {
     final paint = Paint()
-      ..color = parseColor(entity.color)
+      ..color = color
       ..style = PaintingStyle.fill;
 
     final path = _trianglePath;
@@ -467,6 +540,11 @@ class TriangleCanvasShape extends CanvasShape {
 
     canvas.drawPath(path, paint);
 
+    // Draw text content if not editing
+    if (!isEditingText && entity.text != null && entity.text!.isNotEmpty) {
+      _paintText(canvas);
+    }
+
     if (isSelected) {
       final borderPaint = Paint()
         ..color = const Color(0xFFFFFFFF)
@@ -478,6 +556,28 @@ class TriangleCanvasShape extends CanvasShape {
     if (entity.rotation != 0) {
       canvas.restore();
     }
+  }
+
+  void _paintText(Canvas canvas) {
+    final textSpan = TextSpan(
+      text: entity.text,
+      style: const TextStyle(color: Color(0xFFFFFFFF), fontSize: 14),
+    );
+
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+
+    textPainter.layout(maxWidth: entity.width - 16);
+    textPainter.paint(
+      canvas,
+      Offset(
+        entity.x + (entity.width - textPainter.width) / 2,
+        entity.y + (entity.height - textPainter.height) / 2,
+      ),
+    );
   }
 
   @override
@@ -520,31 +620,42 @@ class TextCanvasShape extends CanvasShape {
   }
 
   @override
-  void paint(Canvas canvas, {bool isSelected = false}) {
-    final color = parseColor(entity.color);
-
+  void paint(
+    Canvas canvas, {
+    bool isSelected = false,
+    bool isEditingText = false,
+  }) {
     final rrect = RRect.fromRectAndRadius(bounds, const Radius.circular(4));
 
-    // Text
-    final textSpan = TextSpan(
-      text: entity.text ?? 'Text',
-      style: TextStyle(color: color, fontSize: 14),
-    );
+    if (entity.rotation != 0) {
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(entity.rotation);
+      canvas.translate(-center.dx, -center.dy);
+    }
 
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-    );
+    // Only paint text if not editing (TextField overlay handles it)
+    if (!isEditingText) {
+      final textSpan = TextSpan(
+        text: entity.text ?? 'Text',
+        style: TextStyle(color: color, fontSize: 14),
+      );
 
-    textPainter.layout(maxWidth: entity.width - 16);
-    textPainter.paint(
-      canvas,
-      Offset(
-        entity.x + (entity.width - textPainter.width) / 2,
-        entity.y + (entity.height - textPainter.height) / 2,
-      ),
-    );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      );
+
+      textPainter.layout(maxWidth: entity.width - 16);
+      textPainter.paint(
+        canvas,
+        Offset(
+          entity.x + (entity.width - textPainter.width) / 2,
+          entity.y + (entity.height - textPainter.height) / 2,
+        ),
+      );
+    }
 
     if (isSelected) {
       final borderPaint = Paint()

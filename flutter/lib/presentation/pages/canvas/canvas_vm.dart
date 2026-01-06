@@ -33,6 +33,7 @@ class CanvasLoaded extends CanvasState {
   const CanvasLoaded({
     required this.shapes,
     this.selectedShapeId,
+    this.isEditingText = false,
     this.panOffset = Offset.zero,
     this.zoom = 1.0,
     this.currentTool = CanvasTool.select,
@@ -43,6 +44,9 @@ class CanvasLoaded extends CanvasState {
 
   /// Currently selected shape ID.
   final String? selectedShapeId;
+
+  /// Whether the selected shape's text is being edited (shows TextField overlay).
+  final bool isEditingText;
 
   // --- Local state (UI-only, not persisted) ---
 
@@ -59,6 +63,7 @@ class CanvasLoaded extends CanvasState {
   List<Object?> get props => [
     shapes,
     selectedShapeId,
+    isEditingText,
     panOffset,
     zoom,
     currentTool,
@@ -67,6 +72,7 @@ class CanvasLoaded extends CanvasState {
   CanvasLoaded copyWith({
     List<Shape>? shapes,
     String? selectedShapeId,
+    bool? isEditingText,
     Offset? panOffset,
     double? zoom,
     CanvasTool? currentTool,
@@ -77,6 +83,9 @@ class CanvasLoaded extends CanvasState {
       selectedShapeId: clearSelection
           ? null
           : (selectedShapeId ?? this.selectedShapeId),
+      isEditingText: clearSelection
+          ? false
+          : (isEditingText ?? this.isEditingText),
       panOffset: panOffset ?? this.panOffset,
       zoom: zoom ?? this.zoom,
       currentTool: currentTool ?? this.currentTool,
@@ -198,6 +207,40 @@ class CanvasVM extends StateNotifier<CanvasState> {
   }
 
   // ---------------------------------------------------------------------------
+  // Text Editing
+  // ---------------------------------------------------------------------------
+
+  /// Start editing text for the currently selected shape.
+  void startTextEdit(String shapeId) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(
+      selectedShapeId: shapeId,
+      isEditingText: true,
+    );
+  }
+
+  /// Stop editing text (commit current text).
+  void stopTextEdit() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(isEditingText: false);
+  }
+
+  /// Update the text of a shape.
+  void updateShapeText(String shapeId, String text) {
+    if (state is! CanvasLoaded) return;
+
+    final operation = TextEditOperation(
+      opId: const Uuid().v4(),
+      shapeId: shapeId,
+      text: text,
+    );
+
+    applyOperation(operation);
+  }
+
+  // ---------------------------------------------------------------------------
   // Operation Application (Core of the architecture)
   // ---------------------------------------------------------------------------
   //
@@ -228,6 +271,10 @@ class CanvasVM extends StateNotifier<CanvasState> {
       RotateOperation(:final shapeId, :final angleDelta) => _applyRotate(
         shapeId,
         angleDelta,
+      ),
+      TextEditOperation(:final shapeId, :final text) => _applyTextEdit(
+        shapeId,
+        text,
       ),
       CreateOperation() => _loadedState.shapes, // Create is handled separately
       DeleteOperation(:final shapeId) =>
@@ -319,6 +366,14 @@ class CanvasVM extends StateNotifier<CanvasState> {
       if (shape.id != shapeId) return shape;
 
       return shape.copyWith(rotation: shape.rotation + angleDelta);
+    }).toList();
+  }
+
+  List<Shape> _applyTextEdit(String shapeId, String text) {
+    return _loadedState.shapes.map((shape) {
+      if (shape.id != shapeId) return shape;
+
+      return shape.copyWith(text: text);
     }).toList();
   }
 

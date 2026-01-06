@@ -1,11 +1,10 @@
-import 'dart:ui' show Offset;
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../domain/entities/shape.dart';
 import 'canvas_vm.dart';
 import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
@@ -39,6 +38,17 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   Offset? _lastPointerPosition;
   SystemMouseCursor? _hoverCursor;
 
+  // Text editing
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _textFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _textFocusNode.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(canvasVM(widget.sessionId));
@@ -47,28 +57,36 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       return const SizedBox.shrink();
     }
 
-    return Listener(
-      onPointerDown: (event) => _handlePointerDown(event, state),
-      onPointerMove: (event) => _handlePointerMove(event, state),
-      onPointerUp: (event) => _handlePointerUp(event, state),
-      onPointerCancel: (event) => _handlePointerUp(event, state),
-      child: GestureDetector(
-        // Double-tap to create shape
-        onDoubleTapDown: (details) => _handleDoubleTap(details, state),
-        child: MouseRegion(
-          cursor: _hoverCursor ?? SystemMouseCursors.basic,
-          onHover: (event) => _handlePointerHover(event, state),
-          child: CustomPaint(
-            painter: WhiteboardPainter(
-              shapes: state.shapes.map(createCanvasShape).toList(),
-              selectedShapeId: state.selectedShapeId,
-              panOffset: state.panOffset,
-              zoom: state.zoom,
+    return Stack(
+      children: [
+        Listener(
+          onPointerDown: (event) => _handlePointerDown(event, state),
+          onPointerMove: (event) => _handlePointerMove(event, state),
+          onPointerUp: (event) => _handlePointerUp(event, state),
+          onPointerCancel: (event) => _handlePointerUp(event, state),
+          child: GestureDetector(
+            // Double-tap to create shape or edit text
+            onDoubleTapDown: (details) => _handleDoubleTap(details, state),
+            child: MouseRegion(
+              cursor: _hoverCursor ?? SystemMouseCursors.basic,
+              onHover: (event) => _handlePointerHover(event, state),
+              child: CustomPaint(
+                painter: WhiteboardPainter(
+                  shapes: state.shapes.map(createCanvasShape).toList(),
+                  selectedShapeId: state.selectedShapeId,
+                  isEditingText: state.isEditingText,
+                  panOffset: state.panOffset,
+                  zoom: state.zoom,
+                ),
+                size: Size.infinite,
+              ),
             ),
-            size: Size.infinite,
           ),
         ),
-      ),
+        // Text editing overlay
+        if (state.isEditingText && state.selectedShape != null)
+          _buildTextEditingOverlay(state, state.selectedShape!),
+      ],
     );
   }
 
@@ -78,6 +96,11 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
   void _handlePointerDown(PointerDownEvent event, CanvasLoaded state) {
     final position = _toCanvasPosition(event.localPosition, state);
+
+    // If currently editing text, stop editing when clicking elsewhere
+    if (state.isEditingText) {
+      ref.read(canvasVM(widget.sessionId).notifier).stopTextEdit();
+    }
 
     // Hit test shapes using CanvasShape (top-down, last shape is on top)
     for (final shape in state.shapes.reversed) {
@@ -127,10 +150,30 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handleDoubleTap(TapDownDetails details, CanvasLoaded state) {
-    // TODO(lucasbiancogs): Revisit this creation process
     final position = _toCanvasPosition(details.localPosition, state);
-    final tool = state.currentTool;
 
+    // First check if we're double-tapping on an existing shape to edit text
+    for (final shape in state.shapes.reversed) {
+      final canvasShape = createCanvasShape(shape);
+      if (canvasShape.hitTest(position)) {
+        // Start text editing for this shape
+        _textController.text = shape.text ?? '';
+        ref.read(canvasVM(widget.sessionId).notifier).startTextEdit(shape.id);
+        // Request focus after the overlay is built
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _textFocusNode.requestFocus();
+          // Select all text for easy replacement
+          _textController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _textController.text.length,
+          );
+        });
+        return;
+      }
+    }
+
+    // If not on a shape, create a new shape (if tool is not select)
+    final tool = state.currentTool;
     if (tool == CanvasTool.select) return;
 
     // Create shape at position
@@ -196,6 +239,56 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       ),
       RotateIntent() => null,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text Editing Overlay
+  // ---------------------------------------------------------------------------
+
+  Widget _buildTextEditingOverlay(CanvasLoaded state, Shape shape) {
+    final canvasShape = createCanvasShape(shape);
+
+    // Calculate the position of the text field in screen coordinates
+    final screenX = shape.x * state.zoom + state.panOffset.dx;
+    final screenY = shape.y * state.zoom + state.panOffset.dy;
+    final screenWidth = shape.width * state.zoom;
+    final screenHeight = shape.height * state.zoom;
+
+    return Positioned(
+      left: screenX,
+      top: screenY,
+      width: screenWidth,
+      height: screenHeight,
+      child: TextField(
+        controller: _textController,
+        focusNode: _textFocusNode,
+        maxLines: null,
+        expands: true,
+        textAlign: TextAlign.center,
+        textAlignVertical: TextAlignVertical.center,
+        style: TextStyle(
+          color: canvasShape.textColor,
+          fontSize: 14 * state.zoom,
+        ),
+        cursorColor: canvasShape.textColor,
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.all(8),
+        ),
+        onChanged: (text) {
+          // Update text in real-time
+          ref
+              .read(canvasVM(widget.sessionId).notifier)
+              .updateShapeText(shape.id, text);
+        },
+        onSubmitted: (_) => _commitTextEdit(),
+        onTapOutside: (_) => _commitTextEdit(),
+      ),
+    );
+  }
+
+  void _commitTextEdit() {
+    ref.read(canvasVM(widget.sessionId).notifier).stopTextEdit();
   }
 }
 

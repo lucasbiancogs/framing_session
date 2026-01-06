@@ -18,6 +18,7 @@ class WhiteboardPainter extends CustomPainter {
   WhiteboardPainter({
     required this.shapes,
     this.selectedShapeId,
+    this.isEditingText = false,
     this.panOffset = Offset.zero,
     this.zoom = 1.0,
     this.showGrid = true,
@@ -25,6 +26,7 @@ class WhiteboardPainter extends CustomPainter {
 
   final List<CanvasShape> shapes;
   final String? selectedShapeId;
+  final bool isEditingText;
   final Offset panOffset;
   final double zoom;
   final bool showGrid;
@@ -43,8 +45,14 @@ class WhiteboardPainter extends CustomPainter {
 
     for (final shape in shapes) {
       final isSelected = shape.id == selectedShapeId;
+      // Only the selected shape can be in text editing mode
+      final isShapeEditingText = isSelected && isEditingText;
 
-      shape.paint(canvas, isSelected: isSelected);
+      shape.paint(
+        canvas,
+        isSelected: isSelected,
+        isEditingText: isShapeEditingText,
+      );
 
       if (isSelected) {
         shape.paintHandles(canvas);
@@ -82,6 +90,7 @@ class WhiteboardPainter extends CustomPainter {
   bool shouldRepaint(covariant WhiteboardPainter oldDelegate) {
     return shapes != oldDelegate.shapes ||
         selectedShapeId != oldDelegate.selectedShapeId ||
+        isEditingText != oldDelegate.isEditingText ||
         panOffset != oldDelegate.panOffset ||
         zoom != oldDelegate.zoom ||
         showGrid != oldDelegate.showGrid;
