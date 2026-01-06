@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/session_services.dart';
 import '../../domain/services/shape_services.dart';
 
 // =============================================================================
@@ -15,4 +16,9 @@ final shapeServices = Provider<ShapeServices>(
   name: 'shapeServices',
 );
 
-// TODO: Add sessionServices provider (same pattern)
+/// Session services provider.
+/// Override this with MockSessionServices (Phase 4) or real implementation (Phase 5+).
+final sessionServices = Provider<SessionServices>(
+  (_) => throw UnimplementedError('sessionServices must be overridden'),
+  name: 'sessionServices',
+);

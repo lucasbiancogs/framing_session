@@ -9,7 +9,7 @@ Track your progress through the Supabase Realtime learning phases.
 | 0     | Mental Model & Taxonomy      | [x]    | 2025-12-30     |
 | 1     | Project & Environment Setup  | [x]    | 2026-01-02     |
 | 2     | Tables & Data Modeling       | [x]    | 2026-01-02     |
-| 3     | Database Realtime (CDC)      | [ ]    |                |
+| 3     | Database Realtime (CDC)      | [x]    | 2026-01-03     |
 | 4     | Flutter Local State & Canvas | [ ]    |                |
 | 5     | Presence                     | [ ]    |                |
 | 6     | Broadcast                    | [ ]    |                |
@@ -155,11 +155,11 @@ ViewModel decides WHAT is true
 
 ### Features to Build (You Drive)
 
-- [ ] Create `SessionServices` (interface + `MockSessionServices` implementation)
-- [ ] Create `SessionsPage` with a list of sessions
-- [ ] Create `SessionsVM` to manage session list state
-- [ ] Add navigation: `SessionsPage` → `CanvasPage`
-- [ ] Add "Create Session" functionality
+- [x] Create `SessionServices` (interface + `MockSessionServices` implementation)
+- [x] Create `SessionsPage` with a list of sessions
+- [x] Create `SessionsVM` to manage session list state
+- [x] Add navigation: `SessionsPage` → `CanvasPage`
+- [x] Add "Create Session" functionality
 
 ### Stretch Goals (Optional)
 
