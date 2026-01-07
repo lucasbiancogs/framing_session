@@ -11,33 +11,48 @@ import 'whiteboard_canvas.dart';
 /// - No shape is a Flutter widget
 /// - Gestures are handled centrally in WhiteboardCanvas
 /// - ViewModel is the single source of truth
-class CanvasPage extends ConsumerWidget {
+/// - Persist errors are shown via snackbars (local state is kept)
+class CanvasPage extends ConsumerStatefulWidget {
   const CanvasPage({super.key, required this.sessionId});
 
   final String sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(canvasVM(sessionId));
+  ConsumerState<CanvasPage> createState() => _CanvasPageState();
+}
+
+class _CanvasPageState extends ConsumerState<CanvasPage> {
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(canvasVM(widget.sessionId));
+
+    ref.listen(canvasVM(widget.sessionId), (previous, next) {
+      if (next is CanvasPersistError) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.exception.message)));
+      }
+    });
 
     return Scaffold(
       backgroundColor: const Color(0xFF2D2D2D),
       appBar: AppBar(
-        title: Text('Session: $sessionId'),
+        title: Text('Session: ${widget.sessionId}'),
         actions: [
           // Delete button (only when shape is selected)
           if (state is CanvasLoaded && state.selectedShapeId != null)
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              onPressed: () =>
-                  ref.read(canvasVM(sessionId).notifier).deleteSelectedShape(),
+              onPressed: () => ref
+                  .read(canvasVM(widget.sessionId).notifier)
+                  .deleteSelectedShape(),
               tooltip: 'Delete selected shape',
             ),
         ],
       ),
       body: switch (state) {
         CanvasLoading() => const Center(child: CircularProgressIndicator()),
-        CanvasLoaded() => WhiteboardCanvas(sessionId: sessionId),
+        CanvasLoaded() => WhiteboardCanvas(sessionId: widget.sessionId),
         CanvasError(:final exception) => Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -50,8 +65,9 @@ class CanvasPage extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () =>
-                    ref.read(canvasVM(sessionId).notifier).retryLoading(),
+                onPressed: () => ref
+                    .read(canvasVM(widget.sessionId).notifier)
+                    .retryLoading(),
                 child: const Text('Retry'),
               ),
             ],
@@ -60,7 +76,10 @@ class CanvasPage extends ConsumerWidget {
         _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: state is CanvasLoaded
-          ? _ToolBar(sessionId: sessionId, currentTool: state.currentTool)
+          ? _ToolBar(
+              sessionId: widget.sessionId,
+              currentTool: state.currentTool,
+            )
           : null,
     );
   }

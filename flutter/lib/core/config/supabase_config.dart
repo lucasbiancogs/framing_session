@@ -23,6 +23,3 @@ Future<void> initSupabase() async {
 
   await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 }
-
-/// Access the Supabase client anywhere in the app.
-SupabaseClient get supabase => Supabase.instance.client;

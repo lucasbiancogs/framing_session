@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:whiteboard/data/repositories/sessions_repository.dart';
+import 'package:whiteboard/data/repositories/shapes_repository.dart';
 
-import 'app/supabase_config.dart';
+import 'core/config/supabase_config.dart';
 import 'domain/services/session_services.dart';
 import 'domain/services/shape_services.dart';
 import 'presentation/pages/sessions/sessions_page.dart';
@@ -10,13 +13,26 @@ import 'presentation/view_models/global_providers.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initSupabase();
+
+  final supabaseClient = Supabase.instance.client;
+
+  //
+  // Repositories
+  //
+  final sessionsRepository = SessionsRepositoryImpl(supabaseClient);
+  final shapesRepository = ShapesRepositoryImpl(supabaseClient);
+
+  //
+  // Services
+  //
+  final sessionServicesImpl = SessionServicesImpl(sessionsRepository);
+  final shapeServicesImpl = ShapeServicesImpl(shapesRepository);
+
   runApp(
-    // Wrap with ProviderScope and override with mock implementations
     ProviderScope(
       overrides: [
-        // Phase 4: Use mock services (no Supabase yet)
-        shapeServices.overrideWithValue(MockShapeServices()),
-        sessionServices.overrideWithValue(MockSessionServices()),
+        sessionServices.overrideWithValue(sessionServicesImpl),
+        shapeServices.overrideWithValue(shapeServicesImpl),
       ],
       child: const WhiteboardApp(),
     ),

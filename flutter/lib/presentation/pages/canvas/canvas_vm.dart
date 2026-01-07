@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../core/errors/base_exception.dart';
+import '../../../core/errors/base_faults.dart';
+import '../../../core/utils/debouncer.dart';
 import '../../../domain/entities/shape.dart';
 import '../../../domain/entities/shape_type.dart';
 import '../../../domain/services/shape_services.dart';
@@ -39,7 +40,7 @@ class CanvasLoaded extends CanvasState {
     this.currentTool = CanvasTool.select,
   });
 
-  /// All shapes in the session (shared state — will come from DB later).
+  /// All shapes in the session.
   final List<Shape> shapes;
 
   /// Currently selected shape ID.
@@ -68,6 +69,18 @@ class CanvasLoaded extends CanvasState {
     zoom,
     currentTool,
   ];
+
+  CanvasPersistError toPersistError(BaseException exception) {
+    return CanvasPersistError(
+      exception: exception,
+      shapes: shapes,
+      selectedShapeId: selectedShapeId,
+      isEditingText: isEditingText,
+      panOffset: panOffset,
+      zoom: zoom,
+      currentTool: currentTool,
+    );
+  }
 
   CanvasLoaded copyWith({
     List<Shape>? shapes,
@@ -110,6 +123,23 @@ class CanvasError extends CanvasState {
   List<Object?> get props => [exception];
 }
 
+class CanvasPersistError extends CanvasLoaded {
+  const CanvasPersistError({
+    required this.exception,
+    required super.shapes,
+    super.selectedShapeId,
+    super.isEditingText,
+    super.panOffset,
+    super.zoom,
+    super.currentTool,
+  });
+
+  final BaseException exception;
+
+  @override
+  List<Object?> get props => [exception, ...super.props];
+}
+
 // =============================================================================
 // Canvas Tool
 // =============================================================================
@@ -122,12 +152,13 @@ enum CanvasTool { select, rectangle, circle, triangle, text }
 // =============================================================================
 //
 // Architecture: ViewModel is the single source of truth.
-// - Owns all shape state
-// - Applies operations (immutable updates)
-// - Emits updated state
-// - Used by both local and remote updates
+// - Owns all shape state (local-first, optimistic updates)
+// - Debounces update operations before persisting
 //
-// Operations, not state, are broadcast. State is derived, not sent.
+// Data Flow:
+// 1. User gesture → immediate local update
+// 2. Create/Delete → immediate persist
+// 3. Move/Resize/Text → debounced persist (300ms)
 // =============================================================================
 
 final canvasVM = StateNotifierProvider.autoDispose
@@ -148,8 +179,26 @@ class CanvasVM extends StateNotifier<CanvasState> {
   /// Set of applied operation IDs (for deduplication).
   final Set<String> _appliedOpIds = {};
 
+  /// Debouncer for update operations (move, resize, rotate, text).
+  final Debouncer _updateDebouncer = Debouncer(
+    duration: const Duration(milliseconds: 300),
+  );
+
+  /// Shape pending persistence after debounce.
+  Shape? _pendingShape;
+
   // Type-safe state accessor
   CanvasLoaded get _loadedState => state as CanvasLoaded;
+
+  // ---------------------------------------------------------------------------
+  // Initialization & Cleanup
+  // ---------------------------------------------------------------------------
+
+  @override
+  void dispose() {
+    _updateDebouncer.cancel();
+    super.dispose();
+  }
 
   // ---------------------------------------------------------------------------
   // Data Loading
@@ -245,11 +294,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
   // ---------------------------------------------------------------------------
   //
   // applyOperation is the SINGLE entry point for all shape mutations.
-  // Both local gestures and remote updates go through here.
   //
   // This ensures:
   // - Deterministic updates
-  // - Same code path for local and remote
   // - Replayable operations
   // ---------------------------------------------------------------------------
 
@@ -260,7 +307,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void applyOperation(EditOperation operation) {
     if (state is! CanvasLoaded) return;
 
-    // Deduplicate operations (for when server echoes back our own ops)
+    // Deduplicate operations
     if (_appliedOpIds.contains(operation.opId)) return;
     _appliedOpIds.add(operation.opId);
 
@@ -283,7 +330,48 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     state = _loadedState.copyWith(shapes: newShapes);
 
-    // TODO: In later phases, broadcast the operation to other clients
+    // Schedule debounced persistence for update operations
+    _scheduleDebouncedPersist(operation);
+  }
+
+  /// Schedule debounced persistence for update operations.
+  void _scheduleDebouncedPersist(EditOperation operation) {
+    // Only debounce move, resize, rotate, and text operations
+    final shapeId = switch (operation) {
+      MoveOperation(:final shapeId) => shapeId,
+      ResizeOperation(:final shapeId) => shapeId,
+      RotateOperation(:final shapeId) => shapeId,
+      TextEditOperation(:final shapeId) => shapeId,
+      _ => null,
+    };
+
+    if (shapeId == null) return;
+
+    // Find the current shape state
+    final shape = _loadedState.shapes.firstWhere(
+      (s) => s.id == shapeId,
+      orElse: () => throw StateError('Shape not found: $shapeId'),
+    );
+
+    _pendingShape = shape;
+
+    _updateDebouncer.run(() {
+      _persistPendingShape();
+    });
+  }
+
+  /// Persist the pending shape after debounce delay.
+  Future<void> _persistPendingShape() async {
+    final shape = _pendingShape;
+    if (shape == null) return;
+
+    _pendingShape = null;
+
+    final result = await _shapeServices.updateShape(shape);
+
+    result.fold((exception) {
+      state = _loadedState.toPersistError(exception);
+    }, (_) {});
   }
 
   List<Shape> _applyMove(String shapeId, Offset delta) {
@@ -377,18 +465,14 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }).toList();
   }
 
-  // ---------------------------------------------------------------------------
-  // Shape Creation
-  // ---------------------------------------------------------------------------
-
   /// Create a new shape at the given position using the current tool.
-  void createShapeAt({
+  Future<void> createShapeAt({
     required Offset position,
     required CanvasTool tool,
     double width = 100,
     double height = 100,
     String color = '#4ED09A',
-  }) {
+  }) async {
     if (state is! CanvasLoaded) return;
 
     final shapeType = _toolToShapeType(tool);
@@ -406,17 +490,20 @@ class CanvasVM extends StateNotifier<CanvasState> {
       rotation: 0,
     );
 
-    // Add shape to state
     state = _loadedState.copyWith(
       shapes: [..._loadedState.shapes, shape],
       selectedShapeId: shape.id,
     );
 
-    // TODO: Persist to service and broadcast CreateOperation
+    final result = await _shapeServices.createShape(shape);
+
+    result.fold((exception) {
+      state = _loadedState.toPersistError(exception);
+    }, (_) {});
   }
 
   /// Delete the currently selected shape.
-  void deleteSelectedShape() {
+  Future<void> deleteSelectedShape() async {
     if (state is! CanvasLoaded) return;
 
     final shapeId = _loadedState.selectedShapeId;
@@ -430,7 +517,11 @@ class CanvasVM extends StateNotifier<CanvasState> {
     applyOperation(operation);
     selectShape(null);
 
-    // TODO: Persist to service
+    final result = await _shapeServices.deleteShape(shapeId);
+
+    result.fold((exception) {
+      state = _loadedState.toPersistError(exception);
+    }, (_) {});
   }
 
   // ---------------------------------------------------------------------------

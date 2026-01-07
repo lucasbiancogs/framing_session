@@ -1,9 +1,8 @@
 ---
 description: Services pattern implementation for consistent data access abstractions
-globs: "**/domain/services/**/*.dart, **/data/datasources/**/*.dart"
+globs: ["flutter/lib/data/repositories/**/*.dart", "flutter/lib/domain/services/**/*.dart", "flutter/lib/data/datasources/**/*.dart"]
 alwaysApply: false
 ---
-
 # Services Pattern Implementation
 
 ## Purpose
@@ -132,6 +131,61 @@ class SupabaseShapeDataSource implements ShapeRemoteDataSource {
   }
 }
 ```
+
+## Repository/DataSource Keys Pattern
+
+Use a private `_Keys` class to centralize table and column names, avoiding magic strings:
+
+```dart
+// ✅ Centralized keys for table/column names
+class _SessionKeys {
+  static const String repo = 'sessions';
+  static const String id = 'id';
+  static const String name = 'name';
+  static const String createdAt = 'created_at';
+  static const String updatedAt = 'updated_at';
+}
+
+class SessionsRepositoryImpl implements SessionsRepository {
+  SessionsRepositoryImpl(this._client);
+
+  final SupabaseClient _client;
+
+  @override
+  Future<List<Session>> getAllSessions() async {
+    final response = await _client
+        .from(_SessionKeys.repo)
+        .select()
+        .order(_SessionKeys.updatedAt, ascending: false);
+
+    return (response as List)
+        .map((data) => SessionDto.fromMap(data as Map<String, dynamic>).toEntity())
+        .toList();
+  }
+
+  @override
+  Future<Session> getSession(String id) async {
+    final response = await _client
+        .from(_SessionKeys.repo)
+        .select()
+        .eq(_SessionKeys.id, id)
+        .single();
+
+    return SessionDto.fromMap(response).toEntity();
+  }
+}
+```
+
+### Benefits of Keys Pattern
+- **Refactoring safety**: Rename columns in one place
+- **IDE support**: Autocomplete for column names
+- **No magic strings**: Compile-time safety
+- **Documentation**: Keys class documents the schema
+
+### Keys Naming Convention
+- Class: `_[Entity]Keys` (private, e.g., `_SessionKeys`, `_ShapeKeys`)
+- Table: `repo` (the table/repository name)
+- Columns: Match database column names in snake_case as const strings
 
 ## Error Handling in Services
 

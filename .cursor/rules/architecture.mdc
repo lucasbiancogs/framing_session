@@ -103,7 +103,7 @@ abstract class GetShapesUseCase {
 }
 
 // ❌ Creating separate Repository layer (use Services instead)
-abstract class ShapeRepository {
+abstract class ShapesRepository {
   Future<Either<BaseException, List<Shape>>> getShapes();
 }
 ```
@@ -707,7 +707,7 @@ class GetShapesUseCase {
 }
 
 // ❌ Don't create separate Repository layer
-abstract class ShapeRepository {
+abstract class ShapesRepository {
   Future<List<Shape>> getShapes();
 }
 

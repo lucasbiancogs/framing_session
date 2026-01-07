@@ -1,4 +1,4 @@
-import 'base_exception.dart';
+import 'base_faults.dart';
 
 /// Exception types for session operations.
 class SessionException extends BaseException {

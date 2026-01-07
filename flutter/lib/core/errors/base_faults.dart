@@ -15,3 +15,18 @@ abstract class BaseException extends Equatable implements Exception {
   @override
   String toString() => '$runtimeType: $message';
 }
+
+/// Base error class for domain layer errors.
+/// All domain errors should extend this class.
+@immutable
+abstract class BaseError extends Error with EquatableMixin {
+  BaseError(this.message);
+
+  final String message;
+
+  @override
+  List<Object?> get props => [message];
+
+  @override
+  String toString() => '$runtimeType: $message';
+}

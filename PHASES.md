@@ -193,14 +193,14 @@ ViewModel decides WHAT is true
 
 ### Tasks to Complete
 
-- [ ] Create `SessionDto` with all 4 methods (`fromMap`, `toMap`, `toEntity`, `fromEntity`)
-- [ ] Create `SupabaseSessionDataSource` implementing CRUD operations
-- [ ] Create `SessionServicesImpl` using the DataSource
-- [ ] Wire up providers in `global_providers.dart`
-- [ ] Test: Create a session from Flutter, see it in Supabase Dashboard
-- [ ] Create `ShapeDto` following the same pattern
-- [ ] Create `SupabaseShapeDataSource` for shapes CRUD
-- [ ] Create `ShapeServicesImpl` using the DataSource
+- [x] Create `SessionDto` with all 4 methods (`fromMap`, `toMap`, `toEntity`, `fromEntity`)
+- [x] Create `SupabaseSessionDataSource` implementing CRUD operations
+- [x] Create `SessionServicesImpl` using the DataSource
+- [x] Wire up providers in `global_providers.dart`
+- [x] Test: Create a session from Flutter, see it in Supabase Dashboard
+- [x] Create `ShapeDto` following the same pattern
+- [x] Create `SupabaseShapeDataSource` for shapes CRUD
+- [x] Create `ShapeServicesImpl` using the DataSource
 
 ### Key Files to Create
 
@@ -216,10 +216,10 @@ flutter/lib/data/
 
 ### Verification
 
-- [ ] Create a session → appears in Supabase Dashboard
-- [ ] Delete a session → removed from Supabase Dashboard
-- [ ] Create a shape → appears in Supabase Dashboard
-- [ ] Refresh the app → data persists (not lost like mock data)
+- [x] Create a session → appears in Supabase Dashboard
+- [x] Delete a session → removed from Supabase Dashboard
+- [x] Create a shape → appears in Supabase Dashboard
+- [x] Refresh the app → data persists (not lost like mock data)
 
 ---
 

@@ -1,4 +1,4 @@
-import 'base_exception.dart';
+import 'package:whiteboard/core/errors/base_faults.dart';
 
 /// Exception types for shape operations.
 class ShapeException extends BaseException {

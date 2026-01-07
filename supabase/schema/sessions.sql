@@ -59,15 +59,24 @@ ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 -- =============================================================================
 -- Allow anyone to read sessions (public whiteboards):
 --
--- CREATE POLICY "Sessions are viewable by everyone"
---   ON sessions FOR SELECT
---   USING (true);
---
--- Allow anyone to create sessions:
---
--- CREATE POLICY "Anyone can create sessions"
---   ON sessions FOR INSERT
---   WITH CHECK (true);
+CREATE POLICY "Sessions are viewable by everyone"
+  ON sessions FOR SELECT
+  USING (true);
+
+-- Allow anyone to create sessions
+CREATE POLICY "Anyone can create sessions"
+  ON sessions FOR INSERT
+  WITH CHECK (true);
+
+-- Allow anyone to delete sessions  
+CREATE POLICY "Anyone can delete sessions"
+  ON sessions FOR DELETE
+  USING (true);
+
+-- Allow anyone to update sessions
+CREATE POLICY "Anyone can update sessions"
+  ON sessions FOR UPDATE
+  USING (true);
 
 -- =============================================================================
 -- REALTIME — Phase 3

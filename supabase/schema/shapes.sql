@@ -29,4 +29,24 @@ COMMENT ON COLUMN shapes.updated_at IS 'When the shape was last updated';
 
 ALTER TABLE shapes ENABLE ROW LEVEL SECURITY;
 
+-- Allow anyone to read shapes
+CREATE POLICY "Shapes are viewable by everyone"
+  ON shapes FOR SELECT
+  USING (true);
+
+-- Allow anyone to create shapes
+CREATE POLICY "Anyone can create shapes"
+  ON shapes FOR INSERT
+  WITH CHECK (true);
+
+-- Allow anyone to delete shapes  
+CREATE POLICY "Anyone can delete shapes"
+  ON shapes FOR DELETE
+  USING (true);
+
+-- Allow anyone to update shapes
+CREATE POLICY "Anyone can update shapes"
+  ON shapes FOR UPDATE
+  USING (true);
+
 ALTER PUBLICATION supabase_realtime ADD TABLE shapes;
