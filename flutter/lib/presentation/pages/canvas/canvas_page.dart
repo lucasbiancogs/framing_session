@@ -3,7 +3,7 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:whiteboard/domain/entities/user.dart';
 import 'package:whiteboard/presentation/helpers/color_helper.dart'
     as color_helper;
-import 'package:whiteboard/presentation/pages/canvas/presence_vm.dart';
+import 'package:whiteboard/presentation/pages/canvas/collaborative_canvas_vm.dart';
 
 import 'canvas_vm.dart';
 import 'whiteboard_canvas.dart';
@@ -29,7 +29,7 @@ class CanvasPage extends ConsumerWidget {
     final state = ref.watch(canvasVM);
     final vm = ref.watch(canvasVM.notifier);
     final sessionName = ref.watch(sessionNameProvider);
-    final presenceState = ref.watch(presenceVM);
+    final collaborativeCanvasState = ref.watch(collaborativeCanvasVM);
     final theme = Theme.of(context);
 
     ref.listen(canvasVM, (previous, next) {
@@ -67,17 +67,19 @@ class CanvasPage extends ConsumerWidget {
           ],
           title: Text(sessionName).semiBold(),
           trailing: [
-            if (presenceState is PresenceLoaded)
+            if (collaborativeCanvasState is CollaborativeCanvasLoaded)
               Padding(
                 padding: const EdgeInsets.only(right: 16),
-                child: _OnlineUsersList(users: presenceState.onlineUsers),
+                child: _OnlineUsersList(
+                  users: collaborativeCanvasState.onlineUsers,
+                ),
               ),
             // Delete button (only when shape is selected)
             if (state is CanvasLoaded && state.selectedShapeId != null)
               Tooltip(
                 tooltip: const TooltipContainer(
                   child: Text('Delete selected shape'),
-                ),
+                ).call,
                 child: IconButton.ghost(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: vm.deleteSelectedShape,

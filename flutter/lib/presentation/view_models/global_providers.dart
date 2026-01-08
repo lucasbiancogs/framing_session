@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/canvas_services.dart';
 import '../../domain/services/session_services.dart';
 import '../../domain/services/shape_services.dart';
 
@@ -21,4 +22,11 @@ final shapeServices = Provider<ShapeServices>(
 final sessionServices = Provider<SessionServices>(
   (_) => throw UnimplementedError('sessionServices must be overridden'),
   name: 'sessionServices',
+);
+
+/// Canvas services provider.
+/// Handles Broadcast operations (cursor positions) and other canvas realtime operations.
+final canvasServices = Provider<CanvasServices>(
+  (_) => throw UnimplementedError('canvasServices must be overridden'),
+  name: 'canvasServices',
 );

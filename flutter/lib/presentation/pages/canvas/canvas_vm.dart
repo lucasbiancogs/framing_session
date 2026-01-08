@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:whiteboard/domain/services/canvas_services.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 
 import '../../../core/errors/base_faults.dart';
@@ -16,9 +17,13 @@ import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 
 final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
-  (ref) => CanvasVM(ref.watch(shapeServices), ref.watch(sessionIdProvider)),
+  (ref) => CanvasVM(
+    ref.watch(shapeServices),
+    ref.watch(canvasServices),
+    ref.watch(sessionIdProvider),
+  ),
   name: 'canvasVM',
-  dependencies: [shapeServices, sessionIdProvider],
+  dependencies: [shapeServices, canvasServices, sessionIdProvider],
 );
 
 @immutable
@@ -156,11 +161,13 @@ class CanvasPersistError extends CanvasLoaded {
 enum CanvasTool { select, rectangle, circle, triangle, text }
 
 class CanvasVM extends StateNotifier<CanvasState> {
-  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
+  CanvasVM(this._shapeServices, this._canvasServices, this.sessionId)
+    : super(const CanvasLoading()) {
     _loadShapes();
   }
 
   final ShapeServices _shapeServices;
+  final CanvasServices _canvasServices;
   final String sessionId;
 
   /// Set of applied operation IDs (for deduplication).

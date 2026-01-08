@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:whiteboard/data/repositories/canvas_repository.dart';
 import 'package:whiteboard/data/repositories/sessions_repository.dart';
 import 'package:whiteboard/data/repositories/shapes_repository.dart';
 
 import 'core/config/supabase_config.dart';
+import 'domain/services/canvas_services.dart';
 import 'domain/services/session_services.dart';
 import 'domain/services/shape_services.dart';
 import 'presentation/pages/sessions/sessions_page.dart';
@@ -21,18 +23,21 @@ void main() async {
   //
   final sessionsRepository = SessionsRepositoryImpl(supabaseClient);
   final shapesRepository = ShapesRepositoryImpl(supabaseClient);
+  final canvasRepository = CanvasRepositoryImpl(supabaseClient);
 
   //
   // Services
   //
   final sessionServicesImpl = SessionServicesImpl(sessionsRepository);
   final shapeServicesImpl = ShapeServicesImpl(shapesRepository);
+  final canvasServicesImpl = CanvasServicesImpl(canvasRepository);
 
   runApp(
     ProviderScope(
       overrides: [
         sessionServices.overrideWithValue(sessionServicesImpl),
         shapeServices.overrideWithValue(shapeServicesImpl),
+        canvasServices.overrideWithValue(canvasServicesImpl),
       ],
       child: const WhiteboardApp(),
     ),

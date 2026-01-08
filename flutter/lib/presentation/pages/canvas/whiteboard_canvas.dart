@@ -5,11 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../domain/entities/shape.dart';
+import '../../../domain/entities/user.dart';
 import 'canvas_vm.dart';
+import 'collaborative_canvas_vm.dart';
 import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 import 'painters/whiteboard_painter.dart';
 import 'models/canvas_shape.dart';
+import 'user_cursor.dart';
 
 /// The main whiteboard canvas widget.
 ///
@@ -46,10 +49,13 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   CanvasVM get vm => ref.watch(canvasVM.notifier);
+  CollaborativeCanvasVM get collaborativeVm =>
+      ref.watch(collaborativeCanvasVM.notifier);
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(canvasVM);
+    final collaborativeState = ref.watch(collaborativeCanvasVM);
 
     if (state is! CanvasLoaded) {
       return const SizedBox.shrink();
@@ -81,6 +87,9 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
             ),
           ),
         ),
+        // Remote user cursors
+        if (collaborativeState is CollaborativeCanvasLoaded)
+          ..._buildUserCursors(collaborativeState, state.panOffset, state.zoom),
         // Text editing overlay
         if (state.isEditingText && state.selectedShape != null)
           _buildTextEditingOverlay(state, state.selectedShape!),
@@ -124,9 +133,10 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handlePointerMove(PointerMoveEvent event, CanvasLoaded state) {
+    final position = _toCanvasPosition(event.localPosition, state);
+
     if (_activeShapeId == null || _activeIntent == null) return;
 
-    final position = _toCanvasPosition(event.localPosition, state);
     final delta = position - (_lastPointerPosition ?? position);
     _lastPointerPosition = position;
 
@@ -180,6 +190,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
   void _handlePointerHover(PointerHoverEvent event, CanvasLoaded state) {
     final position = _toCanvasPosition(event.localPosition, state);
+
+    collaborativeVm.broadcastCursor(position);
 
     for (final shape in state.shapes.reversed) {
       final canvasShape = createCanvasShape(shape);
@@ -283,6 +295,32 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
   void _commitTextEdit() {
     vm.stopTextEdit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // User Cursors
+  // ---------------------------------------------------------------------------
+
+  /// Build user cursor widgets for all remote users.
+  List<Widget> _buildUserCursors(
+    CollaborativeCanvasLoaded collaborativeState,
+    Offset panOffset,
+    double zoom,
+  ) {
+    return collaborativeState.cursors.map((cursor) {
+      // Find the user for this cursor
+      final user = collaborativeState.onlineUsers.firstWhere(
+        (u) => u.id == cursor.userId,
+        orElse: () => const User(id: '', name: 'Unknown', color: '#808080'),
+      );
+
+      return UserCursor(
+        cursor: cursor,
+        user: user,
+        panOffset: panOffset,
+        zoom: zoom,
+      );
+    }).toList();
   }
 }
 

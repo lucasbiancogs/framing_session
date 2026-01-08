@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:dartz/dartz.dart';
-import 'package:uuid/uuid.dart';
 import 'package:whiteboard/data/repositories/sessions_repository.dart';
 import 'package:whiteboard/domain/entities/user.dart';
 
@@ -28,7 +27,10 @@ abstract class SessionServices {
   Future<Either<BaseException, void>> deleteSession(String id);
 
   /// Join a session by ID.
-  Future<Either<BaseException, Stream<List<User>>>> joinSession(String id);
+  Future<Either<BaseException, Stream<List<User>>>> joinSession(
+    String id,
+    String userId,
+  );
 }
 
 class SessionServicesImpl implements SessionServices {
@@ -84,6 +86,7 @@ class SessionServicesImpl implements SessionServices {
   @override
   Future<Either<BaseException, Stream<List<User>>>> joinSession(
     String id,
+    String userId,
   ) async {
     try {
       final names = [
@@ -117,11 +120,7 @@ class SessionServicesImpl implements SessionServices {
       final randomColor =
           '#${Random().nextInt(16777215).toRadixString(16).padLeft(6, '0')}';
 
-      final user = User(
-        id: const Uuid().v4(),
-        name: randomName,
-        color: randomColor,
-      );
+      final user = User(id: userId, name: randomName, color: randomColor);
 
       final stream = await _repository.joinSession(id, user);
 
