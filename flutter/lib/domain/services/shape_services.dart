@@ -2,7 +2,6 @@ import 'package:dartz/dartz.dart';
 
 import '../../core/errors/base_faults.dart';
 import '../../core/errors/shape_exception.dart';
-import '../../data/dtos/shape_dto.dart';
 import '../../data/repositories/shapes_repository.dart';
 import '../entities/shape.dart';
 
@@ -61,8 +60,7 @@ class ShapeServicesImpl implements ShapeServices {
   @override
   Future<Either<BaseException, Shape>> createShape(Shape shape) async {
     try {
-      final dto = ShapeDto.fromEntity(shape);
-      final createdShape = await _repository.createShape(dto);
+      final createdShape = await _repository.createShape(shape);
       return right(createdShape);
     } catch (e) {
       return left(ShapeException.unknown(e.toString()));
@@ -72,8 +70,7 @@ class ShapeServicesImpl implements ShapeServices {
   @override
   Future<Either<BaseException, Shape>> updateShape(Shape shape) async {
     try {
-      final dto = ShapeDto.fromEntity(shape);
-      final updatedShape = await _repository.updateShape(dto);
+      final updatedShape = await _repository.updateShape(shape);
       return right(updatedShape);
     } catch (e) {
       if (e.toString().contains('No rows found')) {

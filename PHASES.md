@@ -225,9 +225,39 @@ flutter/lib/data/
 
 ## Phase 6 — Presence
 
-- [ ] Display connected users in the UI
-- [ ] Handle join/leave events gracefully
-- [ ] Decide what user metadata to track
+### Learning Goals
+
+- [x] Read `supabase/realtime/presence.md` thoroughly
+- [x] Understand why Presence auto-cleans on disconnect (vs Database)
+- [x] Understand the three presence events: `onPresenceSync`, `onPresenceJoin`, `onPresenceLeave`
+- [x] Answer: What happens if a user's browser crashes? (hint: automatic cleanup)
+
+### User Metadata Decision
+
+- [ ] Decide what to track in presence payload:
+  - `user_id` — Required: unique identifier
+  - `name` — Required: display name  
+  - `color` — Required: cursor/avatar color
+  - `online_at` — Optional: connection timestamp
+  - Other? (keep payload small!)
+
+### Implementation Tasks
+
+- [ ] Create `OnlineUser` entity in `domain/entities/`
+- [ ] Create `PresenceServices` (interface + implementation) in `domain/services/`
+- [ ] Create anonymous user identity generator (userId, name, color)
+- [ ] Create `PresenceVM` (StateNotifier) to manage presence state
+- [ ] Wire up presence connection in `CanvasPage` (connect on mount, disconnect on dispose)
+- [ ] Display online users list in the canvas UI (avatars or names)
+- [ ] Test: Open two browser windows → both users appear in the list
+- [ ] Test: Close one window → user disappears from the list
+
+### Verification
+
+- [ ] Open canvas in Browser A → see yourself in online users
+- [ ] Open same session in Browser B → both users visible in both windows
+- [ ] Close Browser B → user disappears from Browser A's list (auto-cleanup!)
+- [ ] Refresh Browser A → presence re-syncs, user reappears
 
 ---
 

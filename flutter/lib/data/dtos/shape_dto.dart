@@ -31,29 +31,29 @@ class ShapeDto {
   final DateTime? updatedAt;
 
   /// Create from database map (Supabase response)
-  factory ShapeDto.fromMap(Map<String, dynamic> map) {
+  factory ShapeDto.fromJson(Map<String, dynamic> json) {
     return ShapeDto(
-      id: map['id'] as String,
-      sessionId: map['session_id'] as String,
-      shapeType: map['shape_type'] as String,
-      height: (map['height'] as num).toDouble(),
-      width: (map['width'] as num).toDouble(),
-      x: (map['x'] as num).toDouble(),
-      y: (map['y'] as num).toDouble(),
-      color: map['color'] as String,
-      rotation: (map['rotation'] as num).toDouble(),
-      text: map['text'] as String?,
-      createdAt: map['created_at'] != null
-          ? DateTime.parse(map['created_at'] as String)
+      id: json['id'] as String,
+      sessionId: json['session_id'] as String,
+      shapeType: json['shape_type'] as String,
+      height: (json['height'] as num).toDouble(),
+      width: (json['width'] as num).toDouble(),
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+      color: json['color'] as String,
+      rotation: (json['rotation'] as num).toDouble(),
+      text: json['text'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
           : null,
-      updatedAt: map['updated_at'] != null
-          ? DateTime.parse(map['updated_at'] as String)
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
           : null,
     );
   }
 
   /// Convert to database map (for INSERT/UPDATE)
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
       'id': id,
       'session_id': sessionId,

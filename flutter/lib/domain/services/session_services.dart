@@ -1,7 +1,9 @@
+import 'dart:math';
+
 import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
-import 'package:whiteboard/data/dtos/session_dto.dart';
 import 'package:whiteboard/data/repositories/sessions_repository.dart';
+import 'package:whiteboard/domain/entities/user.dart';
 
 import '../../core/errors/base_faults.dart';
 import '../../core/errors/session_exception.dart';
@@ -24,11 +26,10 @@ abstract class SessionServices {
 
   /// Delete a session by ID.
   Future<Either<BaseException, void>> deleteSession(String id);
-}
 
-// =============================================================================
-// Supabase Implementation (Phase 5)
-// =============================================================================
+  /// Join a session by ID.
+  Future<Either<BaseException, Stream<List<User>>>> joinSession(String id);
+}
 
 class SessionServicesImpl implements SessionServices {
   SessionServicesImpl(this._repository);
@@ -63,14 +64,7 @@ class SessionServicesImpl implements SessionServices {
     required String name,
   }) async {
     try {
-      final dto = SessionDto(
-        id: const Uuid().v4(),
-        name: name,
-        createdAt: null, // Set by database
-        updatedAt: null, // Set by database
-      );
-
-      final session = await _repository.createSession(dto);
+      final session = await _repository.createSession(name);
       return right(session);
     } catch (e) {
       return left(SessionException.unknown(e.toString()));
@@ -82,6 +76,56 @@ class SessionServicesImpl implements SessionServices {
     try {
       await _repository.deleteSession(id);
       return right(null);
+    } catch (e) {
+      return left(SessionException.unknown(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<BaseException, Stream<List<User>>>> joinSession(
+    String id,
+  ) async {
+    try {
+      final names = [
+        'John Doe',
+        'Rafa Letsche',
+        'Jim Beam',
+        'Paul Solomonson',
+        'George Washington',
+        'Thomas Jefferson',
+        'Abraham Lincoln',
+        'Theodore Roosevelt',
+        'Woodrow Wilson',
+        'Franklin D. Roosevelt',
+        'Harry S. Truman',
+        'Dwight D. Eisenhower',
+        'John F. Kennedy',
+        'Lyndon B. Johnson',
+        'Richard Nixon',
+        'Gerald Ford',
+        'Jimmy Carter',
+        'Ronald Reagan',
+        'George H. W. Bush',
+        'Bill Clinton',
+        'George W. Bush',
+        'Barack Obama',
+        'Donald Trump',
+        'Joe Biden',
+      ];
+
+      final randomName = names[Random().nextInt(names.length)];
+      final randomColor =
+          '#${Random().nextInt(16777215).toRadixString(16).padLeft(6, '0')}';
+
+      final user = User(
+        id: const Uuid().v4(),
+        name: randomName,
+        color: randomColor,
+      );
+
+      final stream = await _repository.joinSession(id, user);
+
+      return right(stream);
     } catch (e) {
       return left(SessionException.unknown(e.toString()));
     }

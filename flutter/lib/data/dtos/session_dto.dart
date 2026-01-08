@@ -14,21 +14,21 @@ class SessionDto {
   final DateTime? updatedAt;
 
   /// Create from database map (Supabase response)
-  factory SessionDto.fromMap(Map<String, dynamic> map) {
+  factory SessionDto.fromJson(Map<String, dynamic> json) {
     return SessionDto(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      createdAt: map['created_at'] != null
-          ? DateTime.parse(map['created_at'] as String)
+      id: json['id'] as String,
+      name: json['name'] as String,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
           : null,
-      updatedAt: map['updated_at'] != null
-          ? DateTime.parse(map['updated_at'] as String)
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
           : null,
     );
   }
 
   /// Convert to database map (for INSERT/UPDATE)
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,

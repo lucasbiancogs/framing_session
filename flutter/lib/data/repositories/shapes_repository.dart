@@ -21,10 +21,10 @@ abstract class ShapesRepository {
   Future<Shape> getShape(String id);
 
   /// Creates a new shape.
-  Future<Shape> createShape(ShapeDto shape);
+  Future<Shape> createShape(Shape shape);
 
   /// Updates an existing shape.
-  Future<Shape> updateShape(ShapeDto shape);
+  Future<Shape> updateShape(Shape shape);
 
   /// Deletes a shape.
   Future<void> deleteShape(String id);
@@ -52,7 +52,7 @@ class ShapesRepositoryImpl implements ShapesRepository {
 
     return (response as List)
         .map(
-          (data) => ShapeDto.fromMap(data as Map<String, dynamic>).toEntity(),
+          (data) => ShapeDto.fromJson(data as Map<String, dynamic>).toEntity(),
         )
         .toList();
   }
@@ -65,30 +65,30 @@ class ShapesRepositoryImpl implements ShapesRepository {
         .eq(_ShapeKeys.id, id)
         .single();
 
-    return ShapeDto.fromMap(response).toEntity();
+    return ShapeDto.fromJson(response).toEntity();
   }
 
   @override
-  Future<Shape> createShape(ShapeDto shape) async {
+  Future<Shape> createShape(Shape shape) async {
     final response = await _client
         .from(_ShapeKeys.repo)
-        .insert(shape.toMap())
+        .insert(ShapeDto.fromEntity(shape).toJson())
         .select()
         .single();
 
-    return ShapeDto.fromMap(response).toEntity();
+    return ShapeDto.fromJson(response).toEntity();
   }
 
   @override
-  Future<Shape> updateShape(ShapeDto shape) async {
+  Future<Shape> updateShape(Shape shape) async {
     final response = await _client
         .from(_ShapeKeys.repo)
-        .update(shape.toMap())
+        .update(ShapeDto.fromEntity(shape).toJson())
         .eq(_ShapeKeys.id, shape.id)
         .select()
         .single();
 
-    return ShapeDto.fromMap(response).toEntity();
+    return ShapeDto.fromJson(response).toEntity();
   }
 
   @override

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:whiteboard/presentation/helpers/color_helper.dart'
+    as color_helper;
 
 import '../../../../domain/entities/shape.dart' as domain;
 import '../../../../domain/entities/shape_type.dart';
@@ -243,14 +245,7 @@ abstract class CanvasShape {
   }
 
   /// Parse a hex color string to a Color.
-  Color get color {
-    try {
-      final hex = entity.color.replaceFirst('#', '');
-      return Color(int.parse('FF$hex', radix: 16));
-    } catch (_) {
-      return const Color(0xFF808080);
-    }
-  }
+  Color get color => color_helper.getColorFromHex(entity.color);
 
   Color get textColor =>
       color.computeLuminance() > 0.4 ? Colors.black : Colors.white;

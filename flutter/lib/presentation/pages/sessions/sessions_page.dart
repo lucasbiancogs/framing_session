@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:whiteboard/presentation/router/routes.dart' as routes;
 
 import '../../../domain/entities/session.dart';
-import '../canvas/canvas_page.dart';
 import 'sessions_vm.dart';
 
 /// Sessions list page — entry point for the app.
@@ -86,25 +86,15 @@ class SessionsPage extends ConsumerWidget {
   ) async {
     if (name.trim().isEmpty) return;
 
-    Navigator.pop(context); // Close dialog
+    Navigator.pop(context);
 
     final sessionId = await ref.read(sessionsVM.notifier).createSession(name);
 
     if (sessionId != null && context.mounted) {
-      // Navigate to the new session
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => CanvasPage(sessionId: sessionId),
-        ),
-      );
+      routes.navigateToCanvas(context, sessionId, name);
     }
   }
 }
-
-// =============================================================================
-// Private Widgets
-// =============================================================================
 
 class _SessionsList extends StatelessWidget {
   const _SessionsList({required this.sessions, required this.isCreating});
@@ -142,7 +132,7 @@ class _SessionCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _navigateToCanvas(context),
+        onTap: () => routes.navigateToCanvas(context, session.id, session.name),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -191,15 +181,6 @@ class _SessionCard extends ConsumerWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _navigateToCanvas(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CanvasPage(sessionId: session.id),
       ),
     );
   }

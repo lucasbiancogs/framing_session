@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:whiteboard/domain/entities/user.dart';
+import 'package:whiteboard/presentation/helpers/color_helper.dart'
+    as color_helper;
+import 'package:whiteboard/presentation/pages/canvas/presence_vm.dart';
 
 import 'canvas_vm.dart';
 import 'whiteboard_canvas.dart';
+
+final sessionIdProvider = Provider<String>((ref) => throw UnimplementedError());
+final sessionNameProvider = Provider<String>(
+  (ref) => throw UnimplementedError(),
+);
 
 /// The main canvas page for a whiteboard session.
 ///
@@ -12,21 +21,15 @@ import 'whiteboard_canvas.dart';
 /// - Gestures are handled centrally in WhiteboardCanvas
 /// - ViewModel is the single source of truth
 /// - Persist errors are shown via snackbars (local state is kept)
-class CanvasPage extends ConsumerStatefulWidget {
-  const CanvasPage({super.key, required this.sessionId});
-
-  final String sessionId;
-
+class CanvasPage extends ConsumerWidget {
   @override
-  ConsumerState<CanvasPage> createState() => _CanvasPageState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(canvasVM);
+    final vm = ref.watch(canvasVM.notifier);
+    final sessionName = ref.watch(sessionNameProvider);
+    final presenceState = ref.watch(presenceVM);
 
-class _CanvasPageState extends ConsumerState<CanvasPage> {
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(canvasVM(widget.sessionId));
-
-    ref.listen(canvasVM(widget.sessionId), (previous, next) {
+    ref.listen(canvasVM, (previous, next) {
       if (next is CanvasPersistError) {
         ScaffoldMessenger.of(
           context,
@@ -37,22 +40,26 @@ class _CanvasPageState extends ConsumerState<CanvasPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF2D2D2D),
       appBar: AppBar(
-        title: Text('Session: ${widget.sessionId}'),
+        title: Text(sessionName),
+
         actions: [
+          if (presenceState is PresenceLoaded)
+            Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: _OnlineUsersList(users: presenceState.onlineUsers),
+            ),
           // Delete button (only when shape is selected)
           if (state is CanvasLoaded && state.selectedShapeId != null)
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              onPressed: () => ref
-                  .read(canvasVM(widget.sessionId).notifier)
-                  .deleteSelectedShape(),
+              onPressed: vm.deleteSelectedShape,
               tooltip: 'Delete selected shape',
             ),
         ],
       ),
       body: switch (state) {
         CanvasLoading() => const Center(child: CircularProgressIndicator()),
-        CanvasLoaded() => WhiteboardCanvas(sessionId: widget.sessionId),
+        CanvasLoaded() => WhiteboardCanvas(),
         CanvasError(:final exception) => Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -65,9 +72,7 @@ class _CanvasPageState extends ConsumerState<CanvasPage> {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () => ref
-                    .read(canvasVM(widget.sessionId).notifier)
-                    .retryLoading(),
+                onPressed: vm.retryLoading,
                 child: const Text('Retry'),
               ),
             ],
@@ -76,24 +81,64 @@ class _CanvasPageState extends ConsumerState<CanvasPage> {
         _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: state is CanvasLoaded
-          ? _ToolBar(
-              sessionId: widget.sessionId,
-              currentTool: state.currentTool,
-            )
+          ? _ToolBar(currentTool: state.currentTool)
           : null,
+    );
+  }
+}
+
+class _OnlineUsersList extends StatelessWidget {
+  const _OnlineUsersList({required this.users});
+
+  final List<User> users;
+
+  static const double _avatarSize = 32;
+  static const double _overlap = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    if (users.isEmpty) return const SizedBox.shrink();
+
+    // Calculate width: first avatar full + subsequent overlaps
+    final width = _avatarSize + (users.length - 1) * _overlap;
+
+    return SizedBox(
+      width: width,
+      height: _avatarSize,
+      child: Stack(
+        children: users.indexed
+            .map(
+              (userIndex) => Positioned(
+                // Reverse order so first user is on top
+                left: (users.length - 1 - userIndex.$1) * _overlap,
+                child: CircleAvatar(
+                  radius: _avatarSize / 2,
+                  backgroundColor: color_helper.getColorFromHex(
+                    userIndex.$2.color,
+                  ),
+                  child: Text(
+                    userIndex.$2.name.substring(0, 1),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
     );
   }
 }
 
 /// Toolbar for selecting drawing tools.
 class _ToolBar extends ConsumerWidget {
-  const _ToolBar({required this.sessionId, required this.currentTool});
+  const _ToolBar({required this.currentTool});
 
-  final String sessionId;
   final CanvasTool currentTool;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final vm = ref.watch(canvasVM.notifier);
+
     return Container(
       color: Colors.black87,
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -105,41 +150,31 @@ class _ToolBar extends ConsumerWidget {
               icon: Icons.near_me,
               label: 'Select',
               isSelected: currentTool == CanvasTool.select,
-              onTap: () => ref
-                  .read(canvasVM(sessionId).notifier)
-                  .setTool(CanvasTool.select),
+              onTap: () => vm.setTool(CanvasTool.select),
             ),
             _ToolButton(
               icon: Icons.crop_square,
               label: 'Rectangle',
               isSelected: currentTool == CanvasTool.rectangle,
-              onTap: () => ref
-                  .read(canvasVM(sessionId).notifier)
-                  .setTool(CanvasTool.rectangle),
+              onTap: () => vm.setTool(CanvasTool.rectangle),
             ),
             _ToolButton(
               icon: Icons.circle_outlined,
               label: 'Circle',
               isSelected: currentTool == CanvasTool.circle,
-              onTap: () => ref
-                  .read(canvasVM(sessionId).notifier)
-                  .setTool(CanvasTool.circle),
+              onTap: () => vm.setTool(CanvasTool.circle),
             ),
             _ToolButton(
               icon: Icons.change_history,
               label: 'Triangle',
               isSelected: currentTool == CanvasTool.triangle,
-              onTap: () => ref
-                  .read(canvasVM(sessionId).notifier)
-                  .setTool(CanvasTool.triangle),
+              onTap: () => vm.setTool(CanvasTool.triangle),
             ),
             _ToolButton(
               icon: Icons.text_fields,
               label: 'Text',
               isSelected: currentTool == CanvasTool.text,
-              onTap: () => ref
-                  .read(canvasVM(sessionId).notifier)
-                  .setTool(CanvasTool.text),
+              onTap: () => vm.setTool(CanvasTool.text),
             ),
           ],
         ),

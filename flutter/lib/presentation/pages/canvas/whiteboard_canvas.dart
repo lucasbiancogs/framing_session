@@ -23,10 +23,6 @@ import 'models/canvas_shape.dart';
 /// No shape is a Flutter widget. All shapes are drawn in a single CustomPainter.
 /// Gestures are handled centrally — there are no gesture detectors per shape.
 class WhiteboardCanvas extends ConsumerStatefulWidget {
-  const WhiteboardCanvas({super.key, required this.sessionId});
-
-  final String sessionId;
-
   @override
   ConsumerState<WhiteboardCanvas> createState() => _WhiteboardCanvasState();
 }
@@ -49,9 +45,11 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     super.dispose();
   }
 
+  CanvasVM get vm => ref.watch(canvasVM.notifier);
+
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(canvasVM(widget.sessionId));
+    final state = ref.watch(canvasVM);
 
     if (state is! CanvasLoaded) {
       return const SizedBox.shrink();
@@ -99,7 +97,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // If currently editing text, stop editing when clicking elsewhere
     if (state.isEditingText) {
-      ref.read(canvasVM(widget.sessionId).notifier).stopTextEdit();
+      vm.stopTextEdit();
     }
 
     // Hit test shapes using CanvasShape (top-down, last shape is on top)
@@ -113,7 +111,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
         _lastPointerPosition = position;
 
         // Select the shape
-        ref.read(canvasVM(widget.sessionId).notifier).selectShape(shape.id);
+        vm.selectShape(shape.id);
         return;
       }
     }
@@ -122,7 +120,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     _activeShapeId = null;
     _activeIntent = null;
     _lastPointerPosition = null;
-    ref.read(canvasVM(widget.sessionId).notifier).selectShape(null);
+    vm.selectShape(null);
   }
 
   void _handlePointerMove(PointerMoveEvent event, CanvasLoaded state) {
@@ -139,7 +137,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     );
 
     if (operation != null) {
-      ref.read(canvasVM(widget.sessionId).notifier).applyOperation(operation);
+      vm.applyOperation(operation);
     }
   }
 
@@ -158,7 +156,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       if (canvasShape.hitTest(position)) {
         // Start text editing for this shape
         _textController.text = shape.text ?? '';
-        ref.read(canvasVM(widget.sessionId).notifier).startTextEdit(shape.id);
+        vm.startTextEdit(shape.id);
         // Request focus after the overlay is built
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _textFocusNode.requestFocus();
@@ -177,9 +175,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     if (tool == CanvasTool.select) return;
 
     // Create shape at position
-    ref
-        .read(canvasVM(widget.sessionId).notifier)
-        .createShapeAt(position: position, tool: tool);
+    vm.createShapeAt(position: position, tool: tool);
   }
 
   void _handlePointerHover(PointerHoverEvent event, CanvasLoaded state) {
@@ -277,9 +273,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
         ),
         onChanged: (text) {
           // Update text in real-time
-          ref
-              .read(canvasVM(widget.sessionId).notifier)
-              .updateShapeText(shape.id, text);
+          vm.updateShapeText(shape.id, text);
         },
         onSubmitted: (_) => _commitTextEdit(),
         onTapOutside: (_) => _commitTextEdit(),
@@ -288,7 +282,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _commitTextEdit() {
-    ref.read(canvasVM(widget.sessionId).notifier).stopTextEdit();
+    vm.stopTextEdit();
   }
 }
 

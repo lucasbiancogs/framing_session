@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 
 import '../../../core/errors/base_faults.dart';
 import '../../../core/utils/debouncer.dart';
@@ -14,9 +15,11 @@ import '../../view_models/global_providers.dart';
 import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 
-// =============================================================================
-// Canvas State
-// =============================================================================
+final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
+  (ref) => CanvasVM(ref.watch(shapeServices), ref.watch(sessionIdProvider)),
+  name: 'canvasVM',
+  dependencies: [shapeServices, sessionIdProvider],
+);
 
 @immutable
 abstract class CanvasState extends Equatable {
@@ -140,33 +143,8 @@ class CanvasPersistError extends CanvasLoaded {
   List<Object?> get props => [exception, ...super.props];
 }
 
-// =============================================================================
-// Canvas Tool
-// =============================================================================
-
 /// Available tools for the canvas.
 enum CanvasTool { select, rectangle, circle, triangle, text }
-
-// =============================================================================
-// Canvas ViewModel
-// =============================================================================
-//
-// Architecture: ViewModel is the single source of truth.
-// - Owns all shape state (local-first, optimistic updates)
-// - Debounces update operations before persisting
-//
-// Data Flow:
-// 1. User gesture → immediate local update
-// 2. Create/Delete → immediate persist
-// 3. Move/Resize/Text → debounced persist (300ms)
-// =============================================================================
-
-final canvasVM = StateNotifierProvider.autoDispose
-    .family<CanvasVM, CanvasState, String>(
-      (ref, sessionId) => CanvasVM(ref.watch(shapeServices), sessionId),
-      name: 'canvasVM',
-      dependencies: [shapeServices],
-    );
 
 class CanvasVM extends StateNotifier<CanvasState> {
   CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {

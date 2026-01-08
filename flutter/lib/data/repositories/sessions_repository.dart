@@ -1,6 +1,11 @@
-import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'dart:async';
+
+import 'package:supabase_flutter/supabase_flutter.dart' hide Session, User;
+import 'package:uuid/uuid.dart';
 import 'package:whiteboard/data/dtos/session_dto.dart';
+import 'package:whiteboard/data/dtos/user_dto.dart';
 import 'package:whiteboard/domain/entities/session.dart';
+import 'package:whiteboard/domain/entities/user.dart';
 
 /// Session repository for managing whiteboard session CRUD operations with Supabase.
 ///
@@ -21,13 +26,19 @@ abstract class SessionsRepository {
   Future<Session> getSession(String id);
 
   /// Creates a new session in the database.
-  Future<Session> createSession(SessionDto session);
+  Future<Session> createSession(String name);
 
   /// Updates an existing session in the database.
-  Future<Session> updateSession(SessionDto session);
+  Future<Session> updateSession(Session session);
 
   /// Deletes a session from the database.
   Future<void> deleteSession(String id);
+
+  /// Joins a session and returns a stream of online users.
+  Future<Stream<List<User>>> joinSession(String sessionId, User user);
+
+  /// Leaves the current session.
+  Future<void> leaveSession();
 }
 
 class _SessionKeys {
@@ -38,12 +49,16 @@ class _SessionKeys {
   // ignore: unused_field
   static const String createdAt = 'created_at';
   static const String updatedAt = 'updated_at';
+  static String presenceChannel(String sessionId) => 'session:$sessionId';
 }
 
 class SessionsRepositoryImpl implements SessionsRepository {
   SessionsRepositoryImpl(this._client);
 
   final SupabaseClient _client;
+
+  StreamController<List<User>>? _presenceController;
+  RealtimeChannel? _presenceChannel;
 
   @override
   Future<List<Session>> getAllSessions() async {
@@ -54,7 +69,8 @@ class SessionsRepositoryImpl implements SessionsRepository {
 
     return (response as List)
         .map(
-          (data) => SessionDto.fromMap(data as Map<String, dynamic>).toEntity(),
+          (data) =>
+              SessionDto.fromJson(data as Map<String, dynamic>).toEntity(),
         )
         .toList();
   }
@@ -67,34 +83,75 @@ class SessionsRepositoryImpl implements SessionsRepository {
         .eq(_SessionKeys.id, id)
         .single();
 
-    return SessionDto.fromMap(response).toEntity();
+    return SessionDto.fromJson(response).toEntity();
   }
 
   @override
-  Future<Session> createSession(SessionDto session) async {
+  Future<Session> createSession(String name) async {
+    final session = Session(id: const Uuid().v4(), name: name);
+
     final response = await _client
         .from(_SessionKeys.repo)
-        .insert(session.toMap())
+        .insert(SessionDto.fromEntity(session).toJson())
         .select()
         .single();
 
-    return SessionDto.fromMap(response).toEntity();
+    return SessionDto.fromJson(response).toEntity();
   }
 
   @override
-  Future<Session> updateSession(SessionDto session) async {
+  Future<Session> updateSession(Session session) async {
     final response = await _client
         .from(_SessionKeys.repo)
-        .update(session.toMap())
+        .update(SessionDto.fromEntity(session).toJson())
         .eq(_SessionKeys.id, session.id)
         .select()
         .single();
 
-    return SessionDto.fromMap(response).toEntity();
+    return SessionDto.fromJson(response).toEntity();
   }
 
   @override
   Future<void> deleteSession(String id) async {
     await _client.from(_SessionKeys.repo).delete().eq(_SessionKeys.id, id);
+  }
+
+  @override
+  Future<Stream<List<User>>> joinSession(String sessionId, User user) async {
+    _presenceController ??= StreamController<List<User>>();
+    _presenceChannel = _client.channel(_SessionKeys.presenceChannel(sessionId));
+
+    final userPayload = UserDto.fromEntity(user).toJson();
+
+    _presenceChannel!
+        .onPresenceSync((payload) {
+          final state = _presenceChannel!.presenceState();
+
+          final users = state
+              .expand((presence) => presence.presences)
+              .map((presence) => UserDto.fromJson(presence.payload).toEntity())
+              .toList();
+
+          _presenceController?.add(users);
+        })
+        .subscribe((status, error) async {
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            await _presenceChannel?.track(userPayload);
+          }
+        });
+
+    _presenceController!.onCancel = () {
+      _presenceChannel?.unsubscribe();
+      _presenceChannel = null;
+      _presenceController?.close();
+      _presenceController = null;
+    };
+
+    return _presenceController!.stream;
+  }
+
+  @override
+  Future<void> leaveSession() async {
+    await _presenceChannel?.untrack();
   }
 }
