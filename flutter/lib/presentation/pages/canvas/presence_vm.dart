@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,9 +24,9 @@ class PresenceVM extends StateNotifier<PresenceState> {
 
   final SessionServices _sessionServices;
   final String _sessionId;
+  StreamSubscription<List<User>>? _subscription;
 
   Future<void> _init() async {
-    print('@debug joining session $_sessionId');
     final result = await _sessionServices.joinSession(_sessionId);
 
     if (result.isLeft()) {
@@ -34,10 +36,17 @@ class PresenceVM extends StateNotifier<PresenceState> {
 
     final stream = result.forceRight();
 
-    stream.listen((users) {
-      print('@debug users: $users');
+    _subscription = stream.listen((users) {
+      if (!mounted) return;
+
       state = PresenceLoaded(onlineUsers: users);
     });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 }
 

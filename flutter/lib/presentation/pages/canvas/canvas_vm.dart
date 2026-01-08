@@ -41,6 +41,7 @@ class CanvasLoaded extends CanvasState {
     this.panOffset = Offset.zero,
     this.zoom = 1.0,
     this.currentTool = CanvasTool.select,
+    this.currentColor = '#4ED09A',
   });
 
   /// All shapes in the session.
@@ -63,6 +64,9 @@ class CanvasLoaded extends CanvasState {
   /// Currently selected drawing tool.
   final CanvasTool currentTool;
 
+  /// Currently selected color for new shapes.
+  final String currentColor;
+
   @override
   List<Object?> get props => [
     shapes,
@@ -71,6 +75,7 @@ class CanvasLoaded extends CanvasState {
     panOffset,
     zoom,
     currentTool,
+    currentColor,
   ];
 
   CanvasPersistError toPersistError(BaseException exception) {
@@ -82,6 +87,7 @@ class CanvasLoaded extends CanvasState {
       panOffset: panOffset,
       zoom: zoom,
       currentTool: currentTool,
+      currentColor: currentColor,
     );
   }
 
@@ -92,6 +98,7 @@ class CanvasLoaded extends CanvasState {
     Offset? panOffset,
     double? zoom,
     CanvasTool? currentTool,
+    String? currentColor,
     bool clearSelection = false,
   }) {
     return CanvasLoaded(
@@ -105,6 +112,7 @@ class CanvasLoaded extends CanvasState {
       panOffset: panOffset ?? this.panOffset,
       zoom: zoom ?? this.zoom,
       currentTool: currentTool ?? this.currentTool,
+      currentColor: currentColor ?? this.currentColor,
     );
   }
 
@@ -135,6 +143,7 @@ class CanvasPersistError extends CanvasLoaded {
     super.panOffset,
     super.zoom,
     super.currentTool,
+    super.currentColor,
   });
 
   final BaseException exception;
@@ -231,6 +240,13 @@ class CanvasVM extends StateNotifier<CanvasState> {
     // Clamp zoom between 25% and 400%
     final clampedZoom = zoom.clamp(0.25, 4.0);
     state = _loadedState.copyWith(zoom: clampedZoom);
+  }
+
+  /// Set the current color for new shapes.
+  void setColor(String color) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(currentColor: color);
   }
 
   // ---------------------------------------------------------------------------
@@ -449,7 +465,6 @@ class CanvasVM extends StateNotifier<CanvasState> {
     required CanvasTool tool,
     double width = 100,
     double height = 100,
-    String color = '#4ED09A',
   }) async {
     if (state is! CanvasLoaded) return;
 
@@ -464,7 +479,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
       y: position.dy - height / 2,
       width: width,
       height: height,
-      color: color,
+      color: _loadedState.currentColor,
       rotation: 0,
     );
 

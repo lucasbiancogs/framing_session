@@ -8,3 +8,7 @@ Color getColorFromHex(String color) {
     return const Color(0xFF808080);
   }
 }
+
+String getHexFromColor(Color color) {
+  return '#${color.toARGB32().toRadixString(16).padLeft(6, '0')}';
+}

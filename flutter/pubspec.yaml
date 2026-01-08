@@ -44,6 +44,9 @@ dependencies:
   dartz: ^0.10.1
   uuid: ^4.5.1
 
+  # UI Framework
+  shadcn_flutter: ^0.0.47
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 
 void navigateToCanvas(
@@ -15,7 +16,7 @@ void navigateToCanvas(
           sessionIdProvider.overrideWithValue(sessionId),
           sessionNameProvider.overrideWithValue(sessionName),
         ],
-        child: CanvasPage(),
+        child: const CanvasPage(),
       ),
     ),
   );

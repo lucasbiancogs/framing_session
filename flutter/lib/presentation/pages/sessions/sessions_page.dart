@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:whiteboard/presentation/router/routes.dart' as routes;
 
 import '../../../domain/entities/session.dart';
@@ -19,33 +19,47 @@ class SessionsPage extends ConsumerWidget {
     final state = ref.watch(sessionsVM);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Whiteboards'), centerTitle: false),
-      body: switch (state) {
-        SessionsLoading() => const Center(child: CircularProgressIndicator()),
-        SessionsLoaded(:final sessions, :final isCreating) => _SessionsList(
-          sessions: sessions,
-          isCreating: isCreating,
+      headers: [
+        AppBar(
+          title: const Text('Whiteboards').large().semiBold(),
+          trailing: [
+            if (state is SessionsLoaded)
+              PrimaryButton(
+                onPressed: state.isCreating
+                    ? null
+                    : () => _showCreateSessionDialog(context, ref),
+                leading: state.isCreating
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add),
+                child: Text(
+                  state.isCreating ? 'Creating...' : 'New Whiteboard',
+                ),
+              ),
+          ],
         ),
-        SessionsError(:final exception) => _ErrorView(
-          message: exception.message,
-          onRetry: () => ref.read(sessionsVM.notifier).retryLoading(),
+      ],
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 1200),
+          child: switch (state) {
+            SessionsLoading() => const Center(
+              child: CircularProgressIndicator(),
+            ),
+            SessionsLoaded(:final sessions, :final isCreating) => _SessionsList(
+              sessions: sessions,
+              isCreating: isCreating,
+            ),
+            SessionsError(:final exception) => _ErrorView(
+              message: exception.message,
+              onRetry: () => ref.read(sessionsVM.notifier).retryLoading(),
+            ),
+          },
         ),
-      },
-      floatingActionButton: state is SessionsLoaded
-          ? FloatingActionButton.extended(
-              onPressed: state.isCreating
-                  ? null
-                  : () => _showCreateSessionDialog(context, ref),
-              icon: state.isCreating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add),
-              label: Text(state.isCreating ? 'Creating...' : 'New Whiteboard'),
-            )
-          : null,
+      ),
     );
   }
 
@@ -56,21 +70,22 @@ class SessionsPage extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Create Whiteboard'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Whiteboard name',
-            border: OutlineInputBorder(),
+        content: SizedBox(
+          width: 300,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            placeholder: const Text('Whiteboard name'),
+            onSubmitted: (value) =>
+                _createSession(context, ref, controller.text),
           ),
-          onSubmitted: (value) => _createSession(context, ref, controller.text),
         ),
         actions: [
-          TextButton(
+          SecondaryButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          PrimaryButton(
             onPressed: () => _createSession(context, ref, controller.text),
             child: const Text('Create'),
           ),
@@ -128,57 +143,57 @@ class _SessionCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => routes.navigateToCanvas(context, session.id, session.name),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Clickable(
+          onPressed: () =>
+              routes.navigateToCanvas(context, session.id, session.name),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Icon
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.scaleAlpha(0.15),
+                    borderRadius: BorderRadius.circular(theme.radiusMd),
+                  ),
+                  child: Icon(
+                    Icons.dashboard_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
-                child: Icon(
-                  Icons.dashboard_outlined,
-                  color: theme.colorScheme.primary,
+                const SizedBox(width: 16),
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(session.name).semiBold(),
+                      const SizedBox(height: 4),
+                      Text(
+                        _formatDate(session.updatedAt ?? session.createdAt),
+                      ).small().muted(),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              // Content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(session.name, style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatDate(session.updatedAt ?? session.createdAt),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                // Delete button
+                GhostButton(
+                  density: ButtonDensity.icon,
+                  onPressed: () => _confirmDelete(context, ref),
+                  child: const Icon(Icons.delete_outline),
                 ),
-              ),
-              // Delete button
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _confirmDelete(context, ref),
-                tooltip: 'Delete',
-              ),
-              // Arrow
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ],
+                const SizedBox(width: 8),
+                // Arrow
+                Icon(
+                  Icons.chevron_right,
+                  color: theme.colorScheme.mutedForeground,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -192,18 +207,15 @@ class _SessionCard extends ConsumerWidget {
         title: const Text('Delete Whiteboard'),
         content: Text('Are you sure you want to delete "${session.name}"?'),
         actions: [
-          TextButton(
+          SecondaryButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          DestructiveButton(
             onPressed: () {
               Navigator.pop(context);
               ref.read(sessionsVM.notifier).deleteSession(session.id);
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
             child: const Text('Delete'),
           ),
         ],
@@ -242,18 +254,15 @@ class _EmptyState extends StatelessWidget {
             Icon(
               Icons.dashboard_customize_outlined,
               size: 80,
-              color: theme.colorScheme.onSurfaceVariant,
+              color: theme.colorScheme.mutedForeground,
             ),
             const SizedBox(height: 16),
-            Text('No whiteboards yet', style: theme.textTheme.titleLarge),
+            const Text('No whiteboards yet').xLarge().semiBold(),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Create your first whiteboard to get started',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
               textAlign: TextAlign.center,
-            ),
+            ).muted(),
           ],
         ),
       ),
@@ -277,22 +286,20 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
-            const SizedBox(height: 16),
-            Text('Something went wrong', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: theme.colorScheme.destructive,
             ),
+            const SizedBox(height: 16),
+            const Text('Something went wrong').xLarge().semiBold(),
+            const SizedBox(height: 8),
+            Text(message, textAlign: TextAlign.center).muted(),
             const SizedBox(height: 24),
-            FilledButton.icon(
+            PrimaryButton(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Try Again'),
+              leading: const Icon(Icons.refresh),
+              child: const Text('Try Again'),
             ),
           ],
         ),

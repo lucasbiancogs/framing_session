@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:whiteboard/data/repositories/sessions_repository.dart';
 import 'package:whiteboard/data/repositories/shapes_repository.dart';
@@ -44,20 +44,17 @@ class WhiteboardApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return ShadcnApp(
       title: 'Whiteboard',
       debugShowCheckedModeBanner: false,
+      themeMode: ThemeMode.dark,
       theme: ThemeData(
-        colorScheme: ColorScheme.dark(
-          surface: const Color(0xFF1E1E1E),
-          surfaceContainerLowest: Colors.black,
-          primary: const Color(0xFF4ED09A),
-          brightness: Brightness.dark,
-          inversePrimary: const Color(0xFF4ED09A),
-          inverseSurface: const Color(0xFF1E1E1E),
-          onSurface: Colors.white,
-        ),
-        appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
+        colorScheme: LegacyColorSchemes.lightZinc(),
+        radius: 0.5,
+      ),
+      darkTheme: ThemeData(
+        colorScheme: LegacyColorSchemes.darkZinc(),
+        radius: 0.5,
       ),
       home: const SessionsPage(),
     );

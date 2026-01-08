@@ -36,9 +36,6 @@ abstract class SessionsRepository {
 
   /// Joins a session and returns a stream of online users.
   Future<Stream<List<User>>> joinSession(String sessionId, User user);
-
-  /// Leaves the current session.
-  Future<void> leaveSession();
 }
 
 class _SessionKeys {
@@ -118,7 +115,7 @@ class SessionsRepositoryImpl implements SessionsRepository {
 
   @override
   Future<Stream<List<User>>> joinSession(String sessionId, User user) async {
-    _presenceController ??= StreamController<List<User>>();
+    _presenceController ??= StreamController<List<User>>.broadcast();
     _presenceChannel = _client.channel(_SessionKeys.presenceChannel(sessionId));
 
     final userPayload = UserDto.fromEntity(user).toJson();
@@ -148,10 +145,5 @@ class SessionsRepositoryImpl implements SessionsRepository {
     };
 
     return _presenceController!.stream;
-  }
-
-  @override
-  Future<void> leaveSession() async {
-    await _presenceChannel?.untrack();
   }
 }

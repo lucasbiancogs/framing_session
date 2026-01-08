@@ -312,6 +312,11 @@ class RectangleCanvasShape extends CanvasShape {
       ..color = color
       ..style = PaintingStyle.fill;
 
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
     final rrect = RRect.fromRectAndRadius(bounds, const Radius.circular(4));
 
     if (entity.rotation != 0) {
@@ -322,6 +327,7 @@ class RectangleCanvasShape extends CanvasShape {
     }
 
     canvas.drawRRect(rrect, paint);
+    canvas.drawRRect(rrect, borderPaint);
 
     // Draw text content if not editing
     if (!isEditingText && entity.text != null && entity.text!.isNotEmpty) {
@@ -423,7 +429,13 @@ class CircleCanvasShape extends CanvasShape {
       ..color = color
       ..style = PaintingStyle.fill;
 
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
     canvas.drawOval(bounds, paint);
+    canvas.drawOval(bounds, borderPaint);
 
     // Draw text content if not editing
     if (!isEditingText && entity.text != null && entity.text!.isNotEmpty) {
@@ -524,6 +536,11 @@ class TriangleCanvasShape extends CanvasShape {
       ..color = color
       ..style = PaintingStyle.fill;
 
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
     final path = _trianglePath;
 
     if (entity.rotation != 0) {
@@ -534,6 +551,7 @@ class TriangleCanvasShape extends CanvasShape {
     }
 
     canvas.drawPath(path, paint);
+    canvas.drawPath(path, borderPaint);
 
     // Draw text content if not editing
     if (!isEditingText && entity.text != null && entity.text!.isNotEmpty) {
