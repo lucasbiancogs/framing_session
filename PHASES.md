@@ -11,8 +11,8 @@ Track your progress through the Supabase Realtime learning phases.
 | 2     | Tables & Data Modeling       | [x]    | 2026-01-02     |
 | 3     | Database Realtime (CDC)      | [x]    | 2026-01-03     |
 | 4     | Flutter Local State & Canvas | [x]    | 2026-01-06     |
-| 5     | Database Integration (CRUD)  | [ ]    |                |
-| 6     | Presence                     | [ ]    |                |
+| 5     | Database Integration (CRUD)  | [x]    | 2026-01-07     |
+| 6     | Presence                     | [x]    | 2026-01-08     |
 | 7     | Broadcast                    | [ ]    |                |
 | 8     | Integration                  | [ ]    |                |
 
@@ -243,21 +243,21 @@ flutter/lib/data/
 
 ### Implementation Tasks
 
-- [ ] Create `OnlineUser` entity in `domain/entities/`
-- [ ] Create `PresenceServices` (interface + implementation) in `domain/services/`
-- [ ] Create anonymous user identity generator (userId, name, color)
-- [ ] Create `PresenceVM` (StateNotifier) to manage presence state
-- [ ] Wire up presence connection in `CanvasPage` (connect on mount, disconnect on dispose)
-- [ ] Display online users list in the canvas UI (avatars or names)
-- [ ] Test: Open two browser windows → both users appear in the list
-- [ ] Test: Close one window → user disappears from the list
+- [x] Create `OnlineUser` entity in `domain/entities/`
+- [x] Create `PresenceServices` (interface + implementation) in `domain/services/`
+- [x] Create anonymous user identity generator (userId, name, color)
+- [x] Create `PresenceVM` (StateNotifier) to manage presence state
+- [x] Wire up presence connection in `CanvasPage` (connect on mount, disconnect on dispose)
+- [x] Display online users list in the canvas UI (avatars or names)
+- [x] Test: Open two browser windows → both users appear in the list
+- [x] Test: Close one window → user disappears from the list
 
 ### Verification
 
-- [ ] Open canvas in Browser A → see yourself in online users
-- [ ] Open same session in Browser B → both users visible in both windows
-- [ ] Close Browser B → user disappears from Browser A's list (auto-cleanup!)
-- [ ] Refresh Browser A → presence re-syncs, user reappears
+- [x] Open canvas in Browser A → see yourself in online users
+- [x] Open same session in Browser B → both users visible in both windows
+- [x] Close Browser B → user disappears from Browser A's list (auto-cleanup!)
+- [x] Refresh Browser A → presence re-syncs, user reappears
 
 ---
 
