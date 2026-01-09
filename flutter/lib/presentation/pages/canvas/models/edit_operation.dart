@@ -66,21 +66,6 @@ class ResizeOperation extends EditOperation {
   List<Object?> get props => [...super.props, handle, delta];
 }
 
-/// Rotate a shape by an angle delta.
-class RotateOperation extends EditOperation {
-  const RotateOperation({
-    required super.opId,
-    required super.shapeId,
-    required this.angleDelta,
-    super.revision,
-  });
-
-  final double angleDelta;
-
-  @override
-  List<Object?> get props => [...super.props, angleDelta];
-}
-
 /// Create a new shape.
 class CreateOperation extends EditOperation {
   const CreateOperation({

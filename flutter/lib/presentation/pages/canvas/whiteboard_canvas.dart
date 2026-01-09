@@ -3,16 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:whiteboard/presentation/pages/canvas/painters/cursors_painter.dart';
 
 import '../../../domain/entities/shape.dart';
-import '../../../domain/entities/user.dart';
 import 'canvas_vm.dart';
 import 'collaborative_canvas_vm.dart';
 import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 import 'painters/whiteboard_painter.dart';
 import 'models/canvas_shape.dart';
-import 'user_cursor.dart';
 
 /// The main whiteboard canvas widget.
 ///
@@ -64,19 +63,24 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     return Stack(
       children: [
         Listener(
-          onPointerDown: (event) => _handlePointerDown(event, state),
-          onPointerMove: (event) => _handlePointerMove(event, state),
-          onPointerUp: (event) => _handlePointerUp(event, state),
-          onPointerCancel: (event) => _handlePointerUp(event, state),
+          onPointerDown: (event) =>
+              _handlePointerDown(event.localPosition, state),
+          onPointerMove: (event) =>
+              _handlePointerMove(event.localPosition, state),
+          onPointerUp: (event) => _handlePointerUp(event.localPosition, state),
+          onPointerCancel: (event) =>
+              _handlePointerUp(event.localPosition, state),
           child: GestureDetector(
             // Double-tap to create shape or edit text
-            onDoubleTapDown: (details) => _handleDoubleTap(details, state),
+            onDoubleTapDown: (details) =>
+                _handleDoubleTap(details.localPosition, state),
             child: MouseRegion(
               cursor: _hoverCursor ?? SystemMouseCursors.basic,
-              onHover: (event) => _handlePointerHover(event, state),
+              onHover: (event) =>
+                  _handlePointerHover(event.localPosition, state),
               child: CustomPaint(
                 painter: WhiteboardPainter(
-                  shapes: state.shapes.map(createCanvasShape).toList(),
+                  shapes: state.shapes,
                   selectedShapeId: state.selectedShapeId,
                   isEditingText: state.isEditingText,
                   panOffset: state.panOffset,
@@ -87,9 +91,16 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
             ),
           ),
         ),
-        // Remote user cursors
+
         if (collaborativeState is CollaborativeCanvasLoaded)
-          ..._buildUserCursors(collaborativeState, state.panOffset, state.zoom),
+          CustomPaint(
+            painter: CursorsPainter(
+              cursors: collaborativeState.cursors,
+              panOffset: state.panOffset,
+              zoom: state.zoom,
+            ),
+          ),
+
         // Text editing overlay
         if (state.isEditingText && state.selectedShape != null)
           _buildTextEditingOverlay(state, state.selectedShape!),
@@ -101,8 +112,10 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // Pointer Event Handlers
   // ---------------------------------------------------------------------------
 
-  void _handlePointerDown(PointerDownEvent event, CanvasLoaded state) {
-    final position = _toCanvasPosition(event.localPosition, state);
+  void _handlePointerDown(Offset screenPosition, CanvasLoaded state) {
+    final position = _toCanvasPosition(screenPosition, state);
+
+    collaborativeVm.broadcastCursor(position);
 
     // If currently editing text, stop editing when clicking elsewhere
     if (state.isEditingText) {
@@ -111,8 +124,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // Hit test shapes using CanvasShape (top-down, last shape is on top)
     for (final shape in state.shapes.reversed) {
-      final canvasShape = createCanvasShape(shape);
-      final intent = canvasShape.getEditIntent(position);
+      final intent = shape.getEditIntent(position);
 
       if (intent != null) {
         _activeShapeId = shape.id;
@@ -132,8 +144,10 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     vm.selectShape(null);
   }
 
-  void _handlePointerMove(PointerMoveEvent event, CanvasLoaded state) {
-    final position = _toCanvasPosition(event.localPosition, state);
+  void _handlePointerMove(Offset screenPosition, CanvasLoaded state) {
+    final position = _toCanvasPosition(screenPosition, state);
+
+    collaborativeVm.broadcastCursor(position);
 
     if (_activeShapeId == null || _activeIntent == null) return;
 
@@ -151,22 +165,21 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     }
   }
 
-  void _handlePointerUp(PointerEvent event, CanvasLoaded state) {
+  void _handlePointerUp(Offset screenPosition, CanvasLoaded state) {
     _activeShapeId = null;
     _activeIntent = null;
     _lastPointerPosition = null;
   }
 
-  void _handleDoubleTap(TapDownDetails details, CanvasLoaded state) {
-    final position = _toCanvasPosition(details.localPosition, state);
+  void _handleDoubleTap(Offset screenPosition, CanvasLoaded state) {
+    final position = _toCanvasPosition(screenPosition, state);
 
     // First check if we're double-tapping on an existing shape to edit text
-    for (final shape in state.shapes.reversed) {
-      final canvasShape = createCanvasShape(shape);
+    for (final canvasShape in state.shapes.reversed) {
       if (canvasShape.hitTest(position)) {
         // Start text editing for this shape
-        _textController.text = shape.text ?? '';
-        vm.startTextEdit(shape.id);
+        _textController.text = canvasShape.entity.text ?? '';
+        vm.startTextEdit(canvasShape.id);
         // Request focus after the overlay is built
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _textFocusNode.requestFocus();
@@ -188,14 +201,13 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     vm.createShapeAt(position: position, tool: tool);
   }
 
-  void _handlePointerHover(PointerHoverEvent event, CanvasLoaded state) {
-    final position = _toCanvasPosition(event.localPosition, state);
+  void _handlePointerHover(Offset screenPosition, CanvasLoaded state) {
+    final position = _toCanvasPosition(screenPosition, state);
 
     collaborativeVm.broadcastCursor(position);
 
     for (final shape in state.shapes.reversed) {
-      final canvasShape = createCanvasShape(shape);
-      final intent = canvasShape.getEditIntent(position);
+      final intent = shape.getEditIntent(position);
 
       if (intent != null) {
         final newCursor = switch (intent) {
@@ -254,7 +266,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // ---------------------------------------------------------------------------
 
   Widget _buildTextEditingOverlay(CanvasLoaded state, Shape shape) {
-    final canvasShape = createCanvasShape(shape);
+    final canvasShape = CanvasShape.createCanvasShape(shape);
 
     // Calculate the position of the text field in screen coordinates
     final screenX = shape.x * state.zoom + state.panOffset.dx;
@@ -287,40 +299,10 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
           // Update text in real-time
           vm.updateShapeText(shape.id, text);
         },
-        onSubmitted: (_) => _commitTextEdit(),
-        onTapOutside: (_) => _commitTextEdit(),
+        onSubmitted: (_) => vm.stopTextEdit(),
+        onTapOutside: (_) => vm.stopTextEdit(),
       ),
     );
-  }
-
-  void _commitTextEdit() {
-    vm.stopTextEdit();
-  }
-
-  // ---------------------------------------------------------------------------
-  // User Cursors
-  // ---------------------------------------------------------------------------
-
-  /// Build user cursor widgets for all remote users.
-  List<Widget> _buildUserCursors(
-    CollaborativeCanvasLoaded collaborativeState,
-    Offset panOffset,
-    double zoom,
-  ) {
-    return collaborativeState.cursors.map((cursor) {
-      // Find the user for this cursor
-      final user = collaborativeState.onlineUsers.firstWhere(
-        (u) => u.id == cursor.userId,
-        orElse: () => const User(id: '', name: 'Unknown', color: '#808080'),
-      );
-
-      return UserCursor(
-        cursor: cursor,
-        user: user,
-        panOffset: panOffset,
-        zoom: zoom,
-      );
-    }).toList();
   }
 }
 

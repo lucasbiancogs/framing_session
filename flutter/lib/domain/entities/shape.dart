@@ -52,35 +52,4 @@ class Shape extends Equatable {
     createdAt,
     updatedAt,
   ];
-
-  /// Creates a copy of this shape with the given fields replaced.
-  Shape copyWith({
-    String? id,
-    String? sessionId,
-    ShapeType? shapeType,
-    double? height,
-    double? width,
-    double? x,
-    double? y,
-    String? color,
-    double? rotation,
-    String? text,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
-    return Shape(
-      id: id ?? this.id,
-      sessionId: sessionId ?? this.sessionId,
-      shapeType: shapeType ?? this.shapeType,
-      height: height ?? this.height,
-      width: width ?? this.width,
-      x: x ?? this.x,
-      y: y ?? this.y,
-      color: color ?? this.color,
-      rotation: rotation ?? this.rotation,
-      text: text ?? this.text,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
 }

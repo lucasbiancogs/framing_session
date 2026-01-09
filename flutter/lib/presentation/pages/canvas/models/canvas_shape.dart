@@ -24,6 +24,25 @@ abstract class CanvasShape {
   /// The underlying domain entity.
   domain.Shape get entity;
 
+  static CanvasShape createCanvasShape(domain.Shape shape) {
+    return switch (shape.shapeType) {
+      ShapeType.rectangle => RectangleCanvasShape(shape),
+      ShapeType.circle => CircleCanvasShape(shape),
+      ShapeType.triangle => TriangleCanvasShape(shape),
+      ShapeType.text => TextCanvasShape(shape),
+    };
+  }
+
+  CanvasShape copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+    double? rotation,
+    String? text,
+    String? color,
+  });
+
   /// Unique identifier (delegates to entity).
   String get id => entity.id;
 
@@ -172,12 +191,12 @@ abstract class CanvasShape {
   }
 
   /// Apply move operation.
-  domain.Shape applyMove(Offset delta) {
-    return entity.copyWith(x: entity.x + delta.dx, y: entity.y + delta.dy);
+  CanvasShape applyMove(Offset delta) {
+    return copyWith(x: entity.x + delta.dx, y: entity.y + delta.dy);
   }
 
   /// Apply resize operation.
-  domain.Shape applyResize(ResizeHandle handle, Offset delta) {
+  CanvasShape applyResize(ResizeHandle handle, Offset delta) {
     var newX = entity.x;
     var newY = entity.y;
     var newWidth = entity.width;
@@ -231,17 +250,12 @@ abstract class CanvasShape {
       }
     }
 
-    return entity.copyWith(
-      x: newX,
-      y: newY,
-      width: newWidth,
-      height: newHeight,
-    );
+    return copyWith(x: newX, y: newY, width: newWidth, height: newHeight);
   }
 
   /// Apply rotate operation.
-  domain.Shape applyRotate(double angleDelta) {
-    return entity.copyWith(rotation: entity.rotation + angleDelta);
+  CanvasShape applyRotate(double angleDelta) {
+    return copyWith(rotation: entity.rotation + angleDelta);
   }
 
   /// Parse a hex color string to a Color.
@@ -251,30 +265,38 @@ abstract class CanvasShape {
       color.computeLuminance() > 0.4 ? Colors.black : Colors.white;
 }
 
-// =============================================================================
-// Factory
-// =============================================================================
-
-/// Create the appropriate CanvasShape from a domain Shape.
-CanvasShape createCanvasShape(domain.Shape shape) {
-  return switch (shape.shapeType) {
-    ShapeType.rectangle => RectangleCanvasShape(shape),
-    ShapeType.circle => CircleCanvasShape(shape),
-    ShapeType.triangle => TriangleCanvasShape(shape),
-    ShapeType.text => TextCanvasShape(shape),
-  };
-}
-
-// =============================================================================
-// Concrete Implementations
-// =============================================================================
-
 /// Rectangle shape implementation.
 class RectangleCanvasShape extends CanvasShape {
   RectangleCanvasShape(this.entity);
 
   @override
   final domain.Shape entity;
+
+  @override
+  RectangleCanvasShape copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+    double? rotation,
+    String? text,
+    String? color,
+  }) => RectangleCanvasShape(
+    domain.Shape(
+      id: entity.id,
+      sessionId: entity.sessionId,
+      shapeType: entity.shapeType,
+      height: height ?? entity.height,
+      width: width ?? entity.width,
+      x: x ?? entity.x,
+      y: y ?? entity.y,
+      color: color ?? entity.color,
+      rotation: rotation ?? entity.rotation,
+      text: text ?? entity.text,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    ),
+  );
 
   @override
   Rect get bounds =>
@@ -289,17 +311,17 @@ class RectangleCanvasShape extends CanvasShape {
   }
 
   @override
-  CanvasShape apply(EditOperation operation) {
-    final newEntity = switch (operation) {
+  RectangleCanvasShape apply(EditOperation operation) {
+    final newShape = switch (operation) {
       MoveOperation(:final delta) => applyMove(delta),
       ResizeOperation(:final handle, :final delta) => applyResize(
         handle,
         delta,
       ),
-      RotateOperation(:final angleDelta) => applyRotate(angleDelta),
-      _ => entity,
+      _ => this,
     };
-    return RectangleCanvasShape(newEntity);
+
+    return newShape as RectangleCanvasShape;
   }
 
   @override
@@ -383,6 +405,32 @@ class CircleCanvasShape extends CanvasShape {
   final domain.Shape entity;
 
   @override
+  CircleCanvasShape copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+    double? rotation,
+    String? text,
+    String? color,
+  }) => CircleCanvasShape(
+    domain.Shape(
+      id: entity.id,
+      sessionId: entity.sessionId,
+      shapeType: entity.shapeType,
+      height: height ?? entity.height,
+      width: width ?? entity.width,
+      x: x ?? entity.x,
+      y: y ?? entity.y,
+      color: color ?? entity.color,
+      rotation: rotation ?? entity.rotation,
+      text: text ?? entity.text,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    ),
+  );
+
+  @override
   Rect get bounds =>
       Rect.fromLTWH(entity.x, entity.y, entity.width, entity.height);
 
@@ -407,16 +455,15 @@ class CircleCanvasShape extends CanvasShape {
 
   @override
   CanvasShape apply(EditOperation operation) {
-    final newEntity = switch (operation) {
+    final newShape = switch (operation) {
       MoveOperation(:final delta) => applyMove(delta),
       ResizeOperation(:final handle, :final delta) => applyResize(
         handle,
         delta,
       ),
-      RotateOperation(:final angleDelta) => applyRotate(angleDelta),
-      _ => entity,
+      _ => this,
     };
-    return CircleCanvasShape(newEntity);
+    return newShape as CircleCanvasShape;
   }
 
   @override
@@ -487,6 +534,32 @@ class TriangleCanvasShape extends CanvasShape {
   final domain.Shape entity;
 
   @override
+  TriangleCanvasShape copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+    double? rotation,
+    String? text,
+    String? color,
+  }) => TriangleCanvasShape(
+    domain.Shape(
+      id: entity.id,
+      sessionId: entity.sessionId,
+      shapeType: entity.shapeType,
+      height: height ?? entity.height,
+      width: width ?? entity.width,
+      x: x ?? entity.x,
+      y: y ?? entity.y,
+      color: color ?? entity.color,
+      rotation: rotation ?? entity.rotation,
+      text: text ?? entity.text,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    ),
+  );
+
+  @override
   Rect get bounds =>
       Rect.fromLTWH(entity.x, entity.y, entity.width, entity.height);
 
@@ -514,16 +587,15 @@ class TriangleCanvasShape extends CanvasShape {
 
   @override
   CanvasShape apply(EditOperation operation) {
-    final newEntity = switch (operation) {
+    final newShape = switch (operation) {
       MoveOperation(:final delta) => applyMove(delta),
       ResizeOperation(:final handle, :final delta) => applyResize(
         handle,
         delta,
       ),
-      RotateOperation(:final angleDelta) => applyRotate(angleDelta),
-      _ => entity,
+      _ => this,
     };
-    return TriangleCanvasShape(newEntity);
+    return newShape as TriangleCanvasShape;
   }
 
   @override
@@ -607,6 +679,32 @@ class TextCanvasShape extends CanvasShape {
   final domain.Shape entity;
 
   @override
+  TextCanvasShape copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+    double? rotation,
+    String? text,
+    String? color,
+  }) => TextCanvasShape(
+    domain.Shape(
+      id: entity.id,
+      sessionId: entity.sessionId,
+      shapeType: entity.shapeType,
+      height: height ?? entity.height,
+      width: width ?? entity.width,
+      x: x ?? entity.x,
+      y: y ?? entity.y,
+      color: color ?? entity.color,
+      rotation: rotation ?? entity.rotation,
+      text: text ?? entity.text,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    ),
+  );
+
+  @override
   Rect get bounds =>
       Rect.fromLTWH(entity.x, entity.y, entity.width, entity.height);
 
@@ -620,16 +718,15 @@ class TextCanvasShape extends CanvasShape {
 
   @override
   CanvasShape apply(EditOperation operation) {
-    final newEntity = switch (operation) {
+    final newShape = switch (operation) {
       MoveOperation(:final delta) => applyMove(delta),
       ResizeOperation(:final handle, :final delta) => applyResize(
         handle,
         delta,
       ),
-      RotateOperation(:final angleDelta) => applyRotate(angleDelta),
-      _ => entity,
+      _ => this,
     };
-    return TextCanvasShape(newEntity);
+    return newShape as TextCanvasShape;
   }
 
   @override

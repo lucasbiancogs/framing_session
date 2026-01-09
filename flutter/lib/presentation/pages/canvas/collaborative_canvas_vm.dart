@@ -11,6 +11,7 @@ import 'package:whiteboard/domain/entities/user.dart';
 import 'package:whiteboard/domain/services/canvas_services.dart';
 import 'package:whiteboard/domain/services/session_services.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/canvas_cursor.dart';
 import 'package:whiteboard/presentation/view_models/global_providers.dart';
 
 final collaborativeCanvasVM =
@@ -98,19 +99,27 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
         return;
       }
 
+      final user = currentState.onlineUsers.firstWhere(
+        (user) => user.id == cursor.userId,
+        orElse: () => throw Exception('User not found'),
+      );
+
       // Find if cursor already exists for this user
       final existingCursorIndex = currentState.cursors.indexWhere(
         (c) => c.userId == cursor.userId,
       );
 
-      final updatedCursors = List<Cursor>.from(currentState.cursors);
+      final updatedCursors = List<CanvasCursor>.from(currentState.cursors);
 
       if (existingCursorIndex >= 0) {
         // Update existing cursor
-        updatedCursors[existingCursorIndex] = cursor;
+        updatedCursors[existingCursorIndex] = CanvasCursor.fromCursor(
+          cursor,
+          user,
+        );
       } else {
         // Add new cursor
-        updatedCursors.add(cursor);
+        updatedCursors.add(CanvasCursor.fromCursor(cursor, user));
       }
 
       state = currentState.copyWith(cursors: updatedCursors);
@@ -161,11 +170,11 @@ class CollaborativeCanvasLoaded extends CollaborativeCanvasState {
 
   final String userId;
   final List<User> onlineUsers;
-  final List<Cursor> cursors;
+  final List<CanvasCursor> cursors;
 
   CollaborativeCanvasLoaded copyWith({
     List<User>? onlineUsers,
-    List<Cursor>? cursors,
+    List<CanvasCursor>? cursors,
   }) {
     return CollaborativeCanvasLoaded(
       userId: userId,

@@ -4,8 +4,8 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
-import 'package:whiteboard/domain/services/canvas_services.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
 
 import '../../../core/errors/base_faults.dart';
 import '../../../core/utils/debouncer.dart';
@@ -17,11 +17,7 @@ import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 
 final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
-  (ref) => CanvasVM(
-    ref.watch(shapeServices),
-    ref.watch(canvasServices),
-    ref.watch(sessionIdProvider),
-  ),
+  (ref) => CanvasVM(ref.watch(shapeServices), ref.watch(sessionIdProvider)),
   name: 'canvasVM',
   dependencies: [shapeServices, canvasServices, sessionIdProvider],
 );
@@ -50,7 +46,7 @@ class CanvasLoaded extends CanvasState {
   });
 
   /// All shapes in the session.
-  final List<Shape> shapes;
+  final List<CanvasShape> shapes;
 
   /// Currently selected shape ID.
   final String? selectedShapeId;
@@ -97,7 +93,7 @@ class CanvasLoaded extends CanvasState {
   }
 
   CanvasLoaded copyWith({
-    List<Shape>? shapes,
+    List<CanvasShape>? shapes,
     String? selectedShapeId,
     bool? isEditingText,
     Offset? panOffset,
@@ -161,13 +157,11 @@ class CanvasPersistError extends CanvasLoaded {
 enum CanvasTool { select, rectangle, circle, triangle, text }
 
 class CanvasVM extends StateNotifier<CanvasState> {
-  CanvasVM(this._shapeServices, this._canvasServices, this.sessionId)
-    : super(const CanvasLoading()) {
+  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
     _loadShapes();
   }
 
   final ShapeServices _shapeServices;
-  final CanvasServices _canvasServices;
   final String sessionId;
 
   /// Set of applied operation IDs (for deduplication).
@@ -179,7 +173,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   );
 
   /// Shape pending persistence after debounce.
-  Shape? _pendingShape;
+  CanvasShape? _pendingShape;
 
   // Type-safe state accessor
   CanvasLoaded get _loadedState => state as CanvasLoaded;
@@ -203,7 +197,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     result.fold(
       (exception) => state = CanvasError(exception),
-      (shapes) => state = CanvasLoaded(shapes: shapes),
+      (shapes) => state = CanvasLoaded(
+        shapes: shapes.map(CanvasShape.createCanvasShape).toList(),
+      ),
     );
   }
 
@@ -316,10 +312,6 @@ class CanvasVM extends StateNotifier<CanvasState> {
       MoveOperation(:final shapeId, :final delta) => _applyMove(shapeId, delta),
       ResizeOperation(:final shapeId, :final handle, :final delta) =>
         _applyResize(shapeId, handle, delta),
-      RotateOperation(:final shapeId, :final angleDelta) => _applyRotate(
-        shapeId,
-        angleDelta,
-      ),
       TextEditOperation(:final shapeId, :final text) => _applyTextEdit(
         shapeId,
         text,
@@ -341,7 +333,6 @@ class CanvasVM extends StateNotifier<CanvasState> {
     final shapeId = switch (operation) {
       MoveOperation(:final shapeId) => shapeId,
       ResizeOperation(:final shapeId) => shapeId,
-      RotateOperation(:final shapeId) => shapeId,
       TextEditOperation(:final shapeId) => shapeId,
       _ => null,
     };
@@ -368,97 +359,34 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     _pendingShape = null;
 
-    final result = await _shapeServices.updateShape(shape);
+    final result = await _shapeServices.updateShape(shape.entity);
 
     result.fold((exception) {
       state = _loadedState.toPersistError(exception);
     }, (_) {});
   }
 
-  List<Shape> _applyMove(String shapeId, Offset delta) {
+  List<CanvasShape> _applyMove(String shapeId, Offset delta) {
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
-      return shape.copyWith(x: shape.x + delta.dx, y: shape.y + delta.dy);
+      return shape.applyMove(delta);
     }).toList();
   }
 
-  List<Shape> _applyResize(String shapeId, ResizeHandle handle, Offset delta) {
+  List<CanvasShape> _applyResize(
+    String shapeId,
+    ResizeHandle handle,
+    Offset delta,
+  ) {
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
-      var newX = shape.x;
-      var newY = shape.y;
-      var newWidth = shape.width;
-      var newHeight = shape.height;
-
-      // Apply delta based on which handle is being dragged
-      switch (handle) {
-        case ResizeHandle.topLeft:
-          newX += delta.dx;
-          newY += delta.dy;
-          newWidth -= delta.dx;
-          newHeight -= delta.dy;
-        case ResizeHandle.topCenter:
-          newY += delta.dy;
-          newHeight -= delta.dy;
-        case ResizeHandle.topRight:
-          newY += delta.dy;
-          newWidth += delta.dx;
-          newHeight -= delta.dy;
-        case ResizeHandle.centerLeft:
-          newX += delta.dx;
-          newWidth -= delta.dx;
-        case ResizeHandle.centerRight:
-          newWidth += delta.dx;
-        case ResizeHandle.bottomLeft:
-          newX += delta.dx;
-          newWidth -= delta.dx;
-          newHeight += delta.dy;
-        case ResizeHandle.bottomCenter:
-          newHeight += delta.dy;
-        case ResizeHandle.bottomRight:
-          newWidth += delta.dx;
-          newHeight += delta.dy;
-      }
-
-      // Enforce minimum size
-      const minSize = 20.0;
-      if (newWidth < minSize) {
-        newWidth = minSize;
-        if (handle == ResizeHandle.topLeft ||
-            handle == ResizeHandle.centerLeft ||
-            handle == ResizeHandle.bottomLeft) {
-          newX = shape.x + shape.width - minSize;
-        }
-      }
-      if (newHeight < minSize) {
-        newHeight = minSize;
-        if (handle == ResizeHandle.topLeft ||
-            handle == ResizeHandle.topCenter ||
-            handle == ResizeHandle.topRight) {
-          newY = shape.y + shape.height - minSize;
-        }
-      }
-
-      return shape.copyWith(
-        x: newX,
-        y: newY,
-        width: newWidth,
-        height: newHeight,
-      );
+      return shape.applyResize(handle, delta);
     }).toList();
   }
 
-  List<Shape> _applyRotate(String shapeId, double angleDelta) {
-    return _loadedState.shapes.map((shape) {
-      if (shape.id != shapeId) return shape;
-
-      return shape.copyWith(rotation: shape.rotation + angleDelta);
-    }).toList();
-  }
-
-  List<Shape> _applyTextEdit(String shapeId, String text) {
+  List<CanvasShape> _applyTextEdit(String shapeId, String text) {
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
@@ -490,9 +418,11 @@ class CanvasVM extends StateNotifier<CanvasState> {
       rotation: 0,
     );
 
+    final canvasShape = CanvasShape.createCanvasShape(shape);
+
     state = _loadedState.copyWith(
-      shapes: [..._loadedState.shapes, shape],
-      selectedShapeId: shape.id,
+      shapes: [..._loadedState.shapes, canvasShape],
+      selectedShapeId: canvasShape.id,
     );
 
     final result = await _shapeServices.createShape(shape);
