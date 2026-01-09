@@ -1,15 +1,13 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:whiteboard/presentation/pages/canvas/painters/cursors_painter.dart';
 
-import '../../../domain/entities/shape.dart';
 import 'canvas_vm.dart';
 import 'collaborative_canvas_vm.dart';
 import 'models/edit_intent.dart';
-import 'models/edit_operation.dart';
+import 'models/canvas_operation.dart';
 import 'painters/whiteboard_painter.dart';
 import 'models/canvas_shape.dart';
 
@@ -25,6 +23,8 @@ import 'models/canvas_shape.dart';
 /// No shape is a Flutter widget. All shapes are drawn in a single CustomPainter.
 /// Gestures are handled centrally — there are no gesture detectors per shape.
 class WhiteboardCanvas extends ConsumerStatefulWidget {
+  const WhiteboardCanvas({super.key});
+
   @override
   ConsumerState<WhiteboardCanvas> createState() => _WhiteboardCanvasState();
 }
@@ -171,6 +171,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     if (operation != null) {
       vm.applyOperation(operation);
+      collaborativeVm.broadcastOperation(operation);
     }
   }
 
@@ -207,8 +208,22 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     final tool = state.currentTool;
     if (tool == CanvasTool.select) return;
 
+    final shapeType = vm.toolToShapeType(tool);
+
+    if (shapeType == null) return;
+
+    final operation = CreateShapeOperation(
+      opId: const Uuid().v4(),
+      shapeId: const Uuid().v4(),
+      shapeType: shapeType,
+      color: state.currentColor,
+      x: position.dx,
+      y: position.dy,
+    );
+
     // Create shape at position
-    vm.createShapeAt(position: position, tool: tool);
+    vm.applyOperation(operation);
+    collaborativeVm.broadcastOperation(operation);
   }
 
   void _handlePointerHover(Offset screenPosition, CanvasLoaded state) {
@@ -256,7 +271,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   /// Operations use absolute values (final position/bounds) rather than deltas,
   /// so if intermediate updates are lost, the last operation still represents
   /// the correct final state.
-  EditOperation? _createOperation({
+  CanvasOperation? _createOperation({
     required String shapeId,
     required EditIntent intent,
     required Rect initialBounds,
@@ -265,18 +280,17 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     final opId = const Uuid().v4();
 
     return switch (intent) {
-      MoveIntent() => MoveOperation(
+      MoveIntent() => MoveShapeOperation(
         opId: opId,
         shapeId: shapeId,
         position: initialBounds.topLeft + totalDelta,
       ),
-      ResizeIntent(:final handle) => ResizeOperation(
+      ResizeIntent(:final handle) => ResizeShapeOperation(
         opId: opId,
         shapeId: shapeId,
         handle: handle,
         bounds: _calculateNewBounds(initialBounds, handle, totalDelta),
       ),
-      RotateIntent() => null,
     };
   }
 
@@ -342,14 +356,12 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // Text Editing Overlay
   // ---------------------------------------------------------------------------
 
-  Widget _buildTextEditingOverlay(CanvasLoaded state, Shape shape) {
-    final canvasShape = CanvasShape.createCanvasShape(shape);
-
+  Widget _buildTextEditingOverlay(CanvasLoaded state, CanvasShape shape) {
     // Calculate the position of the text field in screen coordinates
-    final screenX = shape.x * state.zoom + state.panOffset.dx;
-    final screenY = shape.y * state.zoom + state.panOffset.dy;
-    final screenWidth = shape.width * state.zoom;
-    final screenHeight = shape.height * state.zoom;
+    final screenX = shape.entity.x * state.zoom + state.panOffset.dx;
+    final screenY = shape.entity.y * state.zoom + state.panOffset.dy;
+    final screenWidth = shape.entity.width * state.zoom;
+    final screenHeight = shape.entity.height * state.zoom;
 
     return Positioned(
       left: screenX,
@@ -363,18 +375,21 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
         expands: true,
         textAlign: TextAlign.center,
         textAlignVertical: TextAlignVertical.center,
-        style: TextStyle(
-          color: canvasShape.textColor,
-          fontSize: 14 * state.zoom,
-        ),
-        cursorColor: canvasShape.textColor,
+        style: TextStyle(color: shape.textColor, fontSize: 14 * state.zoom),
+        cursorColor: shape.textColor,
         decoration: const InputDecoration(
           border: InputBorder.none,
           contentPadding: EdgeInsets.all(8),
         ),
         onChanged: (text) {
-          // Update text in real-time
-          vm.updateShapeText(shape.id, text);
+          final operation = TextShapeOperation(
+            opId: const Uuid().v4(),
+            shapeId: shape.id,
+            text: text,
+          );
+
+          vm.applyOperation(operation);
+          collaborativeVm.broadcastOperation(operation);
         },
         onSubmitted: (_) => vm.stopTextEdit(),
         onTapOutside: (_) => vm.stopTextEdit(),

@@ -5,7 +5,7 @@ import 'package:whiteboard/presentation/helpers/color_helper.dart'
 import '../../../../domain/entities/shape.dart' as domain;
 import '../../../../domain/entities/shape_type.dart';
 import 'edit_intent.dart';
-import 'edit_operation.dart';
+import 'canvas_operation.dart';
 
 /// Abstract base class for canvas shapes.
 ///
@@ -65,7 +65,7 @@ abstract class CanvasShape {
   /// Apply an operation to this shape, returning a new shape.
   ///
   /// Operations are applied immutably — the original shape is unchanged.
-  CanvasShape apply(EditOperation operation);
+  CanvasShape apply(CanvasOperation operation);
 
   /// Paint this shape onto the canvas.
   ///
@@ -268,10 +268,10 @@ class RectangleCanvasShape extends CanvasShape {
   }
 
   @override
-  RectangleCanvasShape apply(EditOperation operation) {
+  RectangleCanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final position) => applyMove(position),
-      ResizeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeOperation(:final position) => applyMove(position),
+      ResizeShapeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
 
@@ -408,10 +408,10 @@ class CircleCanvasShape extends CanvasShape {
   }
 
   @override
-  CanvasShape apply(EditOperation operation) {
+  CanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final position) => applyMove(position),
-      ResizeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeOperation(:final position) => applyMove(position),
+      ResizeShapeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as CircleCanvasShape;
@@ -537,10 +537,10 @@ class TriangleCanvasShape extends CanvasShape {
   }
 
   @override
-  CanvasShape apply(EditOperation operation) {
+  CanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final position) => applyMove(position),
-      ResizeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeOperation(:final position) => applyMove(position),
+      ResizeShapeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as TriangleCanvasShape;
@@ -665,10 +665,10 @@ class TextCanvasShape extends CanvasShape {
   }
 
   @override
-  CanvasShape apply(EditOperation operation) {
+  CanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final position) => applyMove(position),
-      ResizeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeOperation(:final position) => applyMove(position),
+      ResizeShapeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as TextCanvasShape;

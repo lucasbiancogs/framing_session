@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:uuid/uuid.dart';
 import 'package:whiteboard/domain/entities/user.dart';
 import 'package:whiteboard/presentation/helpers/color_helper.dart'
     as color_helper;
 import 'package:whiteboard/presentation/pages/canvas/collaborative_canvas_vm.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/canvas_operation.dart';
 
 import 'canvas_vm.dart';
 import 'whiteboard_canvas.dart';
@@ -28,6 +30,7 @@ class CanvasPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(canvasVM);
     final vm = ref.watch(canvasVM.notifier);
+    final collaborativeVm = ref.watch(collaborativeCanvasVM.notifier);
     final sessionName = ref.watch(sessionNameProvider);
     final collaborativeCanvasState = ref.watch(collaborativeCanvasVM);
     final theme = Theme.of(context);
@@ -52,6 +55,16 @@ class CanvasPage extends ConsumerWidget {
           ),
           location: ToastLocation.bottomRight,
         );
+      }
+    });
+
+    ref.listen(collaborativeCanvasVM, (previous, next) {
+      if (next is! CollaborativeCanvasLoaded) return;
+
+      if (previous == null ||
+          previous is CollaborativeCanvasLoaded &&
+              previous.operation != next.operation) {
+        vm.applyOperation(next.operation!);
       }
     });
 
@@ -82,7 +95,18 @@ class CanvasPage extends ConsumerWidget {
                 ).call,
                 child: IconButton.ghost(
                   icon: const Icon(Icons.delete_outline),
-                  onPressed: vm.deleteSelectedShape,
+                  onPressed: () {
+                    final shapeId = state.selectedShapeId;
+                    if (shapeId == null) return;
+
+                    final operation = DeleteShapeOperation(
+                      opId: const Uuid().v4(),
+                      shapeId: shapeId,
+                    );
+
+                    vm.applyOperation(operation);
+                    collaborativeVm.broadcastOperation(operation);
+                  },
                 ),
               ),
           ],
@@ -106,7 +130,6 @@ class CanvasPage extends ConsumerWidget {
           message: exception.message,
           onRetry: vm.retryLoading,
         ),
-        _ => const SizedBox.shrink(),
       },
     );
   }

@@ -44,8 +44,3 @@ class ResizeIntent extends EditIntent {
   @override
   String toString() => 'ResizeIntent(handle: $handle)';
 }
-
-/// User intends to rotate the shape.
-class RotateIntent extends EditIntent {
-  const RotateIntent();
-}

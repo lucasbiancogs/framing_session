@@ -7,11 +7,13 @@ import 'package:uuid/uuid.dart';
 import 'package:whiteboard/core/either_extension.dart';
 import 'package:whiteboard/core/errors/base_faults.dart';
 import 'package:whiteboard/domain/entities/cursor.dart';
+import 'package:whiteboard/domain/entities/operation.dart';
 import 'package:whiteboard/domain/entities/user.dart';
 import 'package:whiteboard/domain/services/canvas_services.dart';
 import 'package:whiteboard/domain/services/session_services.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_cursor.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/canvas_operation.dart';
 import 'package:whiteboard/presentation/view_models/global_providers.dart';
 
 final collaborativeCanvasVM =
@@ -42,6 +44,7 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
   final String _sessionId;
   StreamSubscription<List<User>>? _presence;
   StreamSubscription<Cursor>? _cursors;
+  StreamSubscription<Operation>? _operations;
 
   Future<void> _init() async {
     final userId = Uuid().v4();
@@ -49,6 +52,7 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
     final results = await Future.wait([
       _sessionServices.joinSession(_sessionId, userId),
       _canvasServices.listenToCursors(_sessionId),
+      _canvasServices.listenToOperations(_sessionId),
     ]);
 
     if (results.any((result) => result.isLeft())) {
@@ -62,10 +66,12 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
       userId: userId,
       onlineUsers: [],
       cursors: [],
+      operation: null,
     );
 
-    final onlineUsersStream = results.first.forceRight() as Stream<List<User>>;
-    final cursorsStream = results.last.forceRight() as Stream<Cursor>;
+    final onlineUsersStream = results[0].forceRight() as Stream<List<User>>;
+    final cursorsStream = results[1].forceRight() as Stream<Cursor>;
+    final operationsStream = results[2].forceRight() as Stream<Operation>;
 
     _presence = onlineUsersStream.listen((users) {
       if (!mounted) return;
@@ -124,6 +130,16 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
 
       state = currentState.copyWith(cursors: updatedCursors);
     });
+
+    _operations = operationsStream.listen((operation) {
+      if (!mounted) return;
+
+      final currentState = _loadedState;
+
+      final canvasOperation = CanvasOperation.fromEntity(operation);
+
+      state = currentState.copyWith(operation: canvasOperation);
+    });
   }
 
   void broadcastCursor(Offset position) {
@@ -138,6 +154,12 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
     _canvasServices.broadcastCursor(_sessionId, cursor);
   }
 
+  void broadcastOperation(CanvasOperation operation) {
+    if (state is! CollaborativeCanvasLoaded) return;
+
+    _canvasServices.broadcastOperation(_sessionId, operation.toEntity());
+  }
+
   CollaborativeCanvasLoaded get _loadedState =>
       state as CollaborativeCanvasLoaded;
 
@@ -145,12 +167,13 @@ class CollaborativeCanvasVM extends StateNotifier<CollaborativeCanvasState> {
   void dispose() {
     _presence?.cancel();
     _cursors?.cancel();
+    _operations?.cancel();
     super.dispose();
   }
 }
 
 @immutable
-abstract class CollaborativeCanvasState extends Equatable {
+sealed class CollaborativeCanvasState extends Equatable {
   const CollaborativeCanvasState();
 
   @override
@@ -166,25 +189,29 @@ class CollaborativeCanvasLoaded extends CollaborativeCanvasState {
     required this.userId,
     required this.onlineUsers,
     required this.cursors,
+    required this.operation,
   });
 
   final String userId;
   final List<User> onlineUsers;
   final List<CanvasCursor> cursors;
+  final CanvasOperation? operation;
 
   CollaborativeCanvasLoaded copyWith({
     List<User>? onlineUsers,
     List<CanvasCursor>? cursors,
+    CanvasOperation? operation,
   }) {
     return CollaborativeCanvasLoaded(
       userId: userId,
       onlineUsers: onlineUsers ?? this.onlineUsers,
       cursors: cursors ?? this.cursors,
+      operation: operation ?? this.operation,
     );
   }
 
   @override
-  List<Object?> get props => [userId, onlineUsers, cursors];
+  List<Object?> get props => [userId, onlineUsers, cursors, operation];
 }
 
 class CollaborativeCanvasError extends CollaborativeCanvasState {

@@ -1,5 +1,6 @@
 import 'package:whiteboard/core/errors/inconsistency_error.dart';
 import 'package:whiteboard/domain/entities/operation.dart';
+import 'package:whiteboard/domain/entities/shape_type.dart';
 
 class _OperationTypes {
   static const String move = 'move';
@@ -9,7 +10,7 @@ class _OperationTypes {
   static const String text = 'text';
 }
 
-abstract class OperationDto {
+sealed class OperationDto {
   const OperationDto({
     required this.opId,
     required this.shapeId,
@@ -21,7 +22,7 @@ abstract class OperationDto {
   final String type;
 
   factory OperationDto.fromJson(Map<String, dynamic> json) {
-    final type = json['type'] as String;
+    final type = json['operation_type'] as String;
 
     return switch (type) {
       _OperationTypes.move => MoveOperationDto.fromJson(json),
@@ -40,9 +41,6 @@ abstract class OperationDto {
       CreateOperation() => CreateOperationDto.fromEntity(entity),
       DeleteOperation() => DeleteOperationDto.fromEntity(entity),
       TextOperation() => TextOperationDto.fromEntity(entity),
-      _ => throw InconsistencyError.internal(
-        'Unknown operation type: ${entity.runtimeType}',
-      ),
     };
   }
 
@@ -72,8 +70,8 @@ class MoveOperationDto extends OperationDto {
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
-      x: json['x'] as double,
-      y: json['y'] as double,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
     );
   }
 
@@ -98,10 +96,14 @@ class ResizeOperationDto extends OperationDto {
     required super.opId,
     required super.shapeId,
     required super.type,
+    required this.x,
+    required this.y,
     required this.width,
     required this.height,
   });
 
+  final double x;
+  final double y;
   final double width;
   final double height;
 
@@ -110,8 +112,10 @@ class ResizeOperationDto extends OperationDto {
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
-      width: json['width'] as double,
-      height: json['height'] as double,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+      width: (json['width'] as num).toDouble(),
+      height: (json['height'] as num).toDouble(),
     );
   }
 
@@ -120,6 +124,8 @@ class ResizeOperationDto extends OperationDto {
         opId: entity.opId,
         shapeId: entity.shapeId,
         type: _OperationTypes.resize,
+        x: entity.x,
+        y: entity.y,
         width: entity.width,
         height: entity.height,
       );
@@ -128,6 +134,8 @@ class ResizeOperationDto extends OperationDto {
   ResizeOperation toEntity() => ResizeOperation(
     opId: opId,
     shapeId: shapeId,
+    x: x,
+    y: y,
     width: width,
     height: height,
   );
@@ -135,6 +143,8 @@ class ResizeOperationDto extends OperationDto {
   @override
   Map<String, dynamic> toJson() => {
     ...super.toJson(),
+    'x': x,
+    'y': y,
     'width': width,
     'height': height,
   };
@@ -145,13 +155,26 @@ class CreateOperationDto extends OperationDto {
     required super.opId,
     required super.shapeId,
     required super.type,
+    required this.shapeType,
+    required this.color,
+    required this.x,
+    required this.y,
   });
+
+  final String shapeType;
+  final String color;
+  final double x;
+  final double y;
 
   factory CreateOperationDto.fromJson(Map<String, dynamic> json) {
     return CreateOperationDto(
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
+      shapeType: json['shape_type'] as String,
+      color: json['color'] as String,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
     );
   }
 
@@ -160,10 +183,30 @@ class CreateOperationDto extends OperationDto {
         opId: entity.opId,
         shapeId: entity.shapeId,
         type: _OperationTypes.create,
+        shapeType: entity.shapeType.name,
+        color: entity.color,
+        x: entity.x,
+        y: entity.y,
       );
 
   @override
-  CreateOperation toEntity() => CreateOperation(opId: opId, shapeId: shapeId);
+  CreateOperation toEntity() => CreateOperation(
+    opId: opId,
+    shapeId: shapeId,
+    color: color,
+    x: x,
+    y: y,
+    shapeType: ShapeType.values.byName(shapeType),
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'color': color,
+    'x': x,
+    'y': y,
+    'shape_type': shapeType,
+  };
 }
 
 class DeleteOperationDto extends OperationDto {

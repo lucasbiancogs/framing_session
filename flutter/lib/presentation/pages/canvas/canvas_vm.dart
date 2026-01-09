@@ -3,7 +3,6 @@ import 'dart:ui' show Offset, Rect;
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
 
@@ -13,7 +12,7 @@ import '../../../domain/entities/shape.dart';
 import '../../../domain/entities/shape_type.dart';
 import '../../../domain/services/shape_services.dart';
 import '../../view_models/global_providers.dart';
-import 'models/edit_operation.dart';
+import 'models/canvas_operation.dart';
 
 final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
   (ref) => CanvasVM(ref.watch(shapeServices), ref.watch(sessionIdProvider)),
@@ -21,8 +20,284 @@ final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
   dependencies: [shapeServices, canvasServices, sessionIdProvider],
 );
 
+/// Available tools for the canvas.
+enum CanvasTool { select, rectangle, circle, triangle, text }
+
+class CanvasVM extends StateNotifier<CanvasState> {
+  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
+    _loadShapes();
+  }
+
+  final ShapeServices _shapeServices;
+  final String sessionId;
+
+  /// Set of applied operation IDs (for deduplication).
+  final Set<String> _appliedOpIds = {};
+
+  /// Debouncer for update operations (move, resize, rotate, text).
+  final Debouncer _updateDebouncer = Debouncer(
+    duration: const Duration(milliseconds: 300),
+  );
+
+  /// Shape pending persistence after debounce.
+  CanvasShape? _pendingShape;
+
+  // Type-safe state accessor
+  CanvasLoaded get _loadedState => state as CanvasLoaded;
+
+  @override
+  void dispose() {
+    _updateDebouncer.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadShapes() async {
+    final result = await _shapeServices.getSessionShapes(sessionId);
+
+    result.fold(
+      (exception) => state = CanvasError(exception),
+      (shapes) => state = CanvasLoaded(
+        shapes: shapes.map(CanvasShape.createCanvasShape).toList(),
+      ),
+    );
+  }
+
+  Future<void> retryLoading() async {
+    state = const CanvasLoading();
+    await _loadShapes();
+  }
+
+  /// Select a shape by ID.
+  void selectShape(String? shapeId) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(
+      selectedShapeId: shapeId,
+      clearSelection: shapeId == null,
+    );
+  }
+
+  /// Change the current tool.
+  void setTool(CanvasTool tool) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(currentTool: tool);
+  }
+
+  /// Update pan offset.
+  void setPanOffset(Offset offset) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(panOffset: offset);
+  }
+
+  /// Update zoom level.
+  void setZoom(double zoom) {
+    if (state is! CanvasLoaded) return;
+
+    // Clamp zoom between 25% and 400%
+    final clampedZoom = zoom.clamp(0.25, 4.0);
+    state = _loadedState.copyWith(zoom: clampedZoom);
+  }
+
+  /// Set the current color for new shapes.
+  void setColor(String color) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(currentColor: color);
+  }
+
+  /// Start editing text for the currently selected shape.
+  void startTextEdit(String shapeId) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(
+      selectedShapeId: shapeId,
+      isEditingText: true,
+    );
+  }
+
+  /// Stop editing text (commit current text).
+  void stopTextEdit() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(isEditingText: false);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operation Application (Core of the architecture)
+  // ---------------------------------------------------------------------------
+  //
+  // applyOperation is the SINGLE entry point for all shape mutations.
+  //
+  // This ensures:
+  // - Deterministic updates
+  // - Replayable operations
+  // ---------------------------------------------------------------------------
+
+  /// Apply an operation to the shape state.
+  ///
+  /// This is the single entry point for all shape mutations.
+  /// Operations are applied immutably — shapes are never mutated in place.
+  void applyOperation(CanvasOperation operation) {
+    if (state is! CanvasLoaded) return;
+
+    // Deduplicate operations
+    if (_appliedOpIds.contains(operation.opId)) return;
+    _appliedOpIds.add(operation.opId);
+
+    final newShapes = switch (operation) {
+      MoveShapeOperation(:final shapeId, :final position) => _applyMove(
+        shapeId,
+        position,
+      ),
+      ResizeShapeOperation(:final shapeId, :final bounds) => _applyResize(
+        shapeId,
+        bounds,
+      ),
+      TextShapeOperation(:final shapeId, :final text) => _applyTextEdit(
+        shapeId,
+        text,
+      ),
+      CreateShapeOperation() => _applyCreate(operation),
+      DeleteShapeOperation(:final shapeId) => _applyDelete(shapeId),
+    };
+
+    state = _loadedState.copyWith(shapes: newShapes);
+
+    // Schedule debounced persistence for update operations
+    _scheduleDebouncedPersist(operation);
+  }
+
+  /// Schedule debounced persistence for update operations.
+  void _scheduleDebouncedPersist(CanvasOperation operation) {
+    switch (operation) {
+      case CreateShapeOperation():
+        final shape = _loadedState.shapes.firstWhere(
+          (s) => s.id == operation.shapeId,
+          orElse: () =>
+              throw StateError('Shape not found: ${operation.shapeId}'),
+        );
+        _shapeServices.createShape(shape.entity);
+        return;
+      case DeleteShapeOperation():
+        _shapeServices.deleteShape(operation.shapeId);
+        return;
+      default:
+        break;
+    }
+
+    // Only debounce move, resize, rotate, and text operations
+    final shapeId = switch (operation) {
+      MoveShapeOperation(:final shapeId) => shapeId,
+      ResizeShapeOperation(:final shapeId) => shapeId,
+      TextShapeOperation(:final shapeId) => shapeId,
+      _ => null,
+    };
+
+    if (shapeId == null) return;
+
+    // Find the current shape state
+    final shape = _loadedState.shapes.firstWhere(
+      (s) => s.id == shapeId,
+      orElse: () => throw StateError('Shape not found: $shapeId'),
+    );
+
+    _pendingShape = shape;
+
+    _updateDebouncer.run(() {
+      _persistPendingShape();
+    });
+  }
+
+  /// Persist the pending shape after debounce delay.
+  Future<void> _persistPendingShape() async {
+    final shape = _pendingShape;
+    if (shape == null) return;
+
+    _pendingShape = null;
+
+    final result = await _shapeServices.updateShape(shape.entity);
+
+    result.fold((exception) {
+      state = _loadedState.toPersistError(exception);
+    }, (_) {});
+  }
+
+  List<CanvasShape> _applyMove(String shapeId, Offset position) {
+    return _loadedState.shapes.map((shape) {
+      if (shape.id != shapeId) return shape;
+
+      return shape.applyMove(position);
+    }).toList();
+  }
+
+  List<CanvasShape> _applyResize(String shapeId, Rect bounds) {
+    return _loadedState.shapes.map((shape) {
+      if (shape.id != shapeId) return shape;
+
+      return shape.applyResize(bounds);
+    }).toList();
+  }
+
+  List<CanvasShape> _applyTextEdit(String shapeId, String text) {
+    return _loadedState.shapes.map((shape) {
+      if (shape.id != shapeId) return shape;
+
+      return shape.copyWith(text: text);
+    }).toList();
+  }
+
+  List<CanvasShape> _applyCreate(CreateShapeOperation operation) {
+    if (state is! CanvasLoaded) return _loadedState.shapes;
+
+    final shapeSize = 150.0;
+
+    final shape = Shape(
+      id: operation.shapeId,
+      sessionId: sessionId,
+      shapeType: operation.shapeType,
+      x: operation.x,
+      y: operation.y,
+      width: shapeSize,
+      height: shapeSize,
+      color: operation.color,
+      rotation: 0,
+    );
+
+    final canvasShape = CanvasShape.createCanvasShape(shape);
+
+    return [..._loadedState.shapes, canvasShape];
+  }
+
+  /// Delete the currently selected shape.
+  List<CanvasShape> _applyDelete(String shapeId) {
+    if (state is! CanvasLoaded) return _loadedState.shapes;
+
+    final newShapes = _loadedState.shapes
+        .where((s) => s.id != shapeId)
+        .toList();
+
+    selectShape(null);
+
+    state = _loadedState.copyWith(shapes: newShapes);
+
+    return newShapes;
+  }
+
+  ShapeType? toolToShapeType(CanvasTool tool) {
+    return switch (tool) {
+      CanvasTool.rectangle => ShapeType.rectangle,
+      CanvasTool.circle => ShapeType.circle,
+      CanvasTool.triangle => ShapeType.triangle,
+      CanvasTool.text => ShapeType.text,
+      CanvasTool.select => null,
+    };
+  }
+}
+
 @immutable
-abstract class CanvasState extends Equatable {
+sealed class CanvasState extends Equatable {
   const CanvasState();
 
   @override
@@ -117,11 +392,8 @@ class CanvasLoaded extends CanvasState {
   }
 
   /// Get the currently selected shape (if any).
-  Shape? get selectedShape => selectedShapeId != null
-      ? shapes.cast<Shape?>().firstWhere(
-          (s) => s?.id == selectedShapeId,
-          orElse: () => null,
-        )
+  CanvasShape? get selectedShape => selectedShapeId != null
+      ? shapes.firstWhere((s) => s.id == selectedShapeId)
       : null;
 }
 
@@ -150,321 +422,4 @@ class CanvasPersistError extends CanvasLoaded {
 
   @override
   List<Object?> get props => [exception, ...super.props];
-}
-
-/// Available tools for the canvas.
-enum CanvasTool { select, rectangle, circle, triangle, text }
-
-class CanvasVM extends StateNotifier<CanvasState> {
-  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
-    _loadShapes();
-  }
-
-  final ShapeServices _shapeServices;
-  final String sessionId;
-
-  /// Set of applied operation IDs (for deduplication).
-  final Set<String> _appliedOpIds = {};
-
-  /// Debouncer for update operations (move, resize, rotate, text).
-  final Debouncer _updateDebouncer = Debouncer(
-    duration: const Duration(milliseconds: 300),
-  );
-
-  /// Shape pending persistence after debounce.
-  CanvasShape? _pendingShape;
-
-  // Type-safe state accessor
-  CanvasLoaded get _loadedState => state as CanvasLoaded;
-
-  // ---------------------------------------------------------------------------
-  // Initialization & Cleanup
-  // ---------------------------------------------------------------------------
-
-  @override
-  void dispose() {
-    _updateDebouncer.cancel();
-    super.dispose();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Data Loading
-  // ---------------------------------------------------------------------------
-
-  Future<void> _loadShapes() async {
-    final result = await _shapeServices.getSessionShapes(sessionId);
-
-    result.fold(
-      (exception) => state = CanvasError(exception),
-      (shapes) => state = CanvasLoaded(
-        shapes: shapes.map(CanvasShape.createCanvasShape).toList(),
-      ),
-    );
-  }
-
-  Future<void> retryLoading() async {
-    state = const CanvasLoading();
-    await _loadShapes();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Local State (UI only)
-  // ---------------------------------------------------------------------------
-
-  /// Select a shape by ID.
-  void selectShape(String? shapeId) {
-    if (state is! CanvasLoaded) return;
-
-    state = _loadedState.copyWith(
-      selectedShapeId: shapeId,
-      clearSelection: shapeId == null,
-    );
-  }
-
-  /// Change the current tool.
-  void setTool(CanvasTool tool) {
-    if (state is! CanvasLoaded) return;
-
-    state = _loadedState.copyWith(currentTool: tool);
-  }
-
-  /// Update pan offset.
-  void setPanOffset(Offset offset) {
-    if (state is! CanvasLoaded) return;
-
-    state = _loadedState.copyWith(panOffset: offset);
-  }
-
-  /// Update zoom level.
-  void setZoom(double zoom) {
-    if (state is! CanvasLoaded) return;
-
-    // Clamp zoom between 25% and 400%
-    final clampedZoom = zoom.clamp(0.25, 4.0);
-    state = _loadedState.copyWith(zoom: clampedZoom);
-  }
-
-  /// Set the current color for new shapes.
-  void setColor(String color) {
-    if (state is! CanvasLoaded) return;
-
-    state = _loadedState.copyWith(currentColor: color);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Text Editing
-  // ---------------------------------------------------------------------------
-
-  /// Start editing text for the currently selected shape.
-  void startTextEdit(String shapeId) {
-    if (state is! CanvasLoaded) return;
-
-    state = _loadedState.copyWith(
-      selectedShapeId: shapeId,
-      isEditingText: true,
-    );
-  }
-
-  /// Stop editing text (commit current text).
-  void stopTextEdit() {
-    if (state is! CanvasLoaded) return;
-
-    state = _loadedState.copyWith(isEditingText: false);
-  }
-
-  /// Update the text of a shape.
-  void updateShapeText(String shapeId, String text) {
-    if (state is! CanvasLoaded) return;
-
-    final operation = TextEditOperation(
-      opId: const Uuid().v4(),
-      shapeId: shapeId,
-      text: text,
-    );
-
-    applyOperation(operation);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Operation Application (Core of the architecture)
-  // ---------------------------------------------------------------------------
-  //
-  // applyOperation is the SINGLE entry point for all shape mutations.
-  //
-  // This ensures:
-  // - Deterministic updates
-  // - Replayable operations
-  // ---------------------------------------------------------------------------
-
-  /// Apply an operation to the shape state.
-  ///
-  /// This is the single entry point for all shape mutations.
-  /// Operations are applied immutably — shapes are never mutated in place.
-  void applyOperation(EditOperation operation) {
-    if (state is! CanvasLoaded) return;
-
-    // Deduplicate operations
-    if (_appliedOpIds.contains(operation.opId)) return;
-    _appliedOpIds.add(operation.opId);
-
-    final newShapes = switch (operation) {
-      MoveOperation(:final shapeId, :final position) => _applyMove(
-        shapeId,
-        position,
-      ),
-      ResizeOperation(:final shapeId, :final bounds) => _applyResize(
-        shapeId,
-        bounds,
-      ),
-      TextEditOperation(:final shapeId, :final text) => _applyTextEdit(
-        shapeId,
-        text,
-      ),
-      CreateOperation() => _loadedState.shapes, // Create is handled separately
-      DeleteOperation(:final shapeId) =>
-        _loadedState.shapes.where((s) => s.id != shapeId).toList(),
-    };
-
-    state = _loadedState.copyWith(shapes: newShapes);
-
-    // Schedule debounced persistence for update operations
-    _scheduleDebouncedPersist(operation);
-  }
-
-  /// Schedule debounced persistence for update operations.
-  void _scheduleDebouncedPersist(EditOperation operation) {
-    // Only debounce move, resize, rotate, and text operations
-    final shapeId = switch (operation) {
-      MoveOperation(:final shapeId) => shapeId,
-      ResizeOperation(:final shapeId) => shapeId,
-      TextEditOperation(:final shapeId) => shapeId,
-      _ => null,
-    };
-
-    if (shapeId == null) return;
-
-    // Find the current shape state
-    final shape = _loadedState.shapes.firstWhere(
-      (s) => s.id == shapeId,
-      orElse: () => throw StateError('Shape not found: $shapeId'),
-    );
-
-    _pendingShape = shape;
-
-    _updateDebouncer.run(() {
-      _persistPendingShape();
-    });
-  }
-
-  /// Persist the pending shape after debounce delay.
-  Future<void> _persistPendingShape() async {
-    final shape = _pendingShape;
-    if (shape == null) return;
-
-    _pendingShape = null;
-
-    final result = await _shapeServices.updateShape(shape.entity);
-
-    result.fold((exception) {
-      state = _loadedState.toPersistError(exception);
-    }, (_) {});
-  }
-
-  List<CanvasShape> _applyMove(String shapeId, Offset position) {
-    return _loadedState.shapes.map((shape) {
-      if (shape.id != shapeId) return shape;
-
-      return shape.applyMove(position);
-    }).toList();
-  }
-
-  List<CanvasShape> _applyResize(String shapeId, Rect bounds) {
-    return _loadedState.shapes.map((shape) {
-      if (shape.id != shapeId) return shape;
-
-      return shape.applyResize(bounds);
-    }).toList();
-  }
-
-  List<CanvasShape> _applyTextEdit(String shapeId, String text) {
-    return _loadedState.shapes.map((shape) {
-      if (shape.id != shapeId) return shape;
-
-      return shape.copyWith(text: text);
-    }).toList();
-  }
-
-  /// Create a new shape at the given position using the current tool.
-  Future<void> createShapeAt({
-    required Offset position,
-    required CanvasTool tool,
-    double width = 100,
-    double height = 100,
-  }) async {
-    if (state is! CanvasLoaded) return;
-
-    final shapeType = _toolToShapeType(tool);
-    if (shapeType == null) return;
-
-    final shape = Shape(
-      id: const Uuid().v4(),
-      sessionId: sessionId,
-      shapeType: shapeType,
-      x: position.dx - width / 2, // Center on tap
-      y: position.dy - height / 2,
-      width: width,
-      height: height,
-      color: _loadedState.currentColor,
-      rotation: 0,
-    );
-
-    final canvasShape = CanvasShape.createCanvasShape(shape);
-
-    state = _loadedState.copyWith(
-      shapes: [..._loadedState.shapes, canvasShape],
-      selectedShapeId: canvasShape.id,
-    );
-
-    final result = await _shapeServices.createShape(shape);
-
-    result.fold((exception) {
-      state = _loadedState.toPersistError(exception);
-    }, (_) {});
-  }
-
-  /// Delete the currently selected shape.
-  Future<void> deleteSelectedShape() async {
-    if (state is! CanvasLoaded) return;
-
-    final shapeId = _loadedState.selectedShapeId;
-    if (shapeId == null) return;
-
-    final operation = DeleteOperation(
-      opId: const Uuid().v4(),
-      shapeId: shapeId,
-    );
-
-    applyOperation(operation);
-    selectShape(null);
-
-    final result = await _shapeServices.deleteShape(shapeId);
-
-    result.fold((exception) {
-      state = _loadedState.toPersistError(exception);
-    }, (_) {});
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
-  ShapeType? _toolToShapeType(CanvasTool tool) {
-    return switch (tool) {
-      CanvasTool.rectangle => ShapeType.rectangle,
-      CanvasTool.circle => ShapeType.circle,
-      CanvasTool.triangle => ShapeType.triangle,
-      CanvasTool.text => ShapeType.text,
-      CanvasTool.select => null,
-    };
-  }
 }

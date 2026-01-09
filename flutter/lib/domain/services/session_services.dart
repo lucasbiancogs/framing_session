@@ -92,9 +92,6 @@ class SessionServicesImpl implements SessionServices {
   ) async {
     try {
       final names = [
-        'John Doe',
-        'Rafa Letsche',
-        'Jim Beam',
         'Paul Solomonson',
         'George Washington',
         'Thomas Jefferson',
@@ -110,7 +107,6 @@ class SessionServicesImpl implements SessionServices {
         'Gerald Ford',
         'Jimmy Carter',
         'Ronald Reagan',
-        'George H. W. Bush',
         'Bill Clinton',
         'George W. Bush',
         'Barack Obama',
