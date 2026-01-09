@@ -27,6 +27,8 @@ abstract class SessionServices {
   Future<Either<BaseException, void>> deleteSession(String id);
 
   /// Join a session by ID.
+  ///
+  /// Returns a stream of online users in the session.
   Future<Either<BaseException, Stream<List<User>>>> joinSession(
     String id,
     String userId,

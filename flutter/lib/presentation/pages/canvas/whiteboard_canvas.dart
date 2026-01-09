@@ -33,7 +33,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // Gesture tracking state
   String? _activeShapeId;
   EditIntent? _activeIntent;
-  Offset? _lastPointerPosition;
+  Offset? _dragStartPosition;
+  Rect? _initialBounds;
   SystemMouseCursor? _hoverCursor;
 
   // Text editing
@@ -129,7 +130,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       if (intent != null) {
         _activeShapeId = shape.id;
         _activeIntent = intent;
-        _lastPointerPosition = position;
+        _dragStartPosition = position;
+        _initialBounds = shape.bounds;
 
         // Select the shape
         vm.selectShape(shape.id);
@@ -140,7 +142,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     // Clicked on empty space — deselect
     _activeShapeId = null;
     _activeIntent = null;
-    _lastPointerPosition = null;
+    _dragStartPosition = null;
+    _initialBounds = null;
     vm.selectShape(null);
   }
 
@@ -149,15 +152,21 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     collaborativeVm.broadcastCursor(position);
 
-    if (_activeShapeId == null || _activeIntent == null) return;
+    if (_activeShapeId == null ||
+        _activeIntent == null ||
+        _dragStartPosition == null ||
+        _initialBounds == null) {
+      return;
+    }
 
-    final delta = position - (_lastPointerPosition ?? position);
-    _lastPointerPosition = position;
+    // Calculate the total delta from the drag start
+    final totalDelta = position - _dragStartPosition!;
 
     final operation = _createOperation(
       shapeId: _activeShapeId!,
       intent: _activeIntent!,
-      delta: delta,
+      initialBounds: _initialBounds!,
+      totalDelta: totalDelta,
     );
 
     if (operation != null) {
@@ -168,7 +177,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   void _handlePointerUp(Offset screenPosition, CanvasLoaded state) {
     _activeShapeId = null;
     _activeIntent = null;
-    _lastPointerPosition = null;
+    _dragStartPosition = null;
+    _initialBounds = null;
   }
 
   void _handleDoubleTap(Offset screenPosition, CanvasLoaded state) {
@@ -241,24 +251,91 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     return (screenPosition - state.panOffset) / state.zoom;
   }
 
-  /// Create an operation from an intent and delta.
+  /// Create an operation from an intent, initial bounds, and total delta.
+  ///
+  /// Operations use absolute values (final position/bounds) rather than deltas,
+  /// so if intermediate updates are lost, the last operation still represents
+  /// the correct final state.
   EditOperation? _createOperation({
     required String shapeId,
     required EditIntent intent,
-    required Offset delta,
+    required Rect initialBounds,
+    required Offset totalDelta,
   }) {
     final opId = const Uuid().v4();
 
     return switch (intent) {
-      MoveIntent() => MoveOperation(opId: opId, shapeId: shapeId, delta: delta),
+      MoveIntent() => MoveOperation(
+        opId: opId,
+        shapeId: shapeId,
+        position: initialBounds.topLeft + totalDelta,
+      ),
       ResizeIntent(:final handle) => ResizeOperation(
         opId: opId,
         shapeId: shapeId,
         handle: handle,
-        delta: delta,
+        bounds: _calculateNewBounds(initialBounds, handle, totalDelta),
       ),
       RotateIntent() => null,
     };
+  }
+
+  /// Calculate new bounds based on initial bounds, handle, and total delta.
+  Rect _calculateNewBounds(
+    Rect initialBounds,
+    ResizeHandle handle,
+    Offset totalDelta,
+  ) {
+    var left = initialBounds.left;
+    var top = initialBounds.top;
+    var right = initialBounds.right;
+    var bottom = initialBounds.bottom;
+
+    switch (handle) {
+      case ResizeHandle.topLeft:
+        left += totalDelta.dx;
+        top += totalDelta.dy;
+      case ResizeHandle.topCenter:
+        top += totalDelta.dy;
+      case ResizeHandle.topRight:
+        right += totalDelta.dx;
+        top += totalDelta.dy;
+      case ResizeHandle.centerLeft:
+        left += totalDelta.dx;
+      case ResizeHandle.centerRight:
+        right += totalDelta.dx;
+      case ResizeHandle.bottomLeft:
+        left += totalDelta.dx;
+        bottom += totalDelta.dy;
+      case ResizeHandle.bottomCenter:
+        bottom += totalDelta.dy;
+      case ResizeHandle.bottomRight:
+        right += totalDelta.dx;
+        bottom += totalDelta.dy;
+    }
+
+    // Ensure minimum size and prevent inverted bounds
+    const minSize = 20.0;
+    if (right - left < minSize) {
+      if (handle == ResizeHandle.topLeft ||
+          handle == ResizeHandle.centerLeft ||
+          handle == ResizeHandle.bottomLeft) {
+        left = right - minSize;
+      } else {
+        right = left + minSize;
+      }
+    }
+    if (bottom - top < minSize) {
+      if (handle == ResizeHandle.topLeft ||
+          handle == ResizeHandle.topCenter ||
+          handle == ResizeHandle.topRight) {
+        top = bottom - minSize;
+      } else {
+        bottom = top + minSize;
+      }
+    }
+
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   // ---------------------------------------------------------------------------

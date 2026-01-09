@@ -190,67 +190,24 @@ abstract class CanvasShape {
     return null;
   }
 
-  /// Apply move operation.
-  CanvasShape applyMove(Offset delta) {
-    return copyWith(x: entity.x + delta.dx, y: entity.y + delta.dy);
+  /// Apply move operation with absolute position.
+  CanvasShape applyMove(Offset position) {
+    return copyWith(x: position.dx, y: position.dy);
   }
 
-  /// Apply resize operation.
-  CanvasShape applyResize(ResizeHandle handle, Offset delta) {
-    var newX = entity.x;
-    var newY = entity.y;
-    var newWidth = entity.width;
-    var newHeight = entity.height;
-
-    switch (handle) {
-      case ResizeHandle.topLeft:
-        newX += delta.dx;
-        newY += delta.dy;
-        newWidth -= delta.dx;
-        newHeight -= delta.dy;
-      case ResizeHandle.topCenter:
-        newY += delta.dy;
-        newHeight -= delta.dy;
-      case ResizeHandle.topRight:
-        newY += delta.dy;
-        newWidth += delta.dx;
-        newHeight -= delta.dy;
-      case ResizeHandle.centerLeft:
-        newX += delta.dx;
-        newWidth -= delta.dx;
-      case ResizeHandle.centerRight:
-        newWidth += delta.dx;
-      case ResizeHandle.bottomLeft:
-        newX += delta.dx;
-        newWidth -= delta.dx;
-        newHeight += delta.dy;
-      case ResizeHandle.bottomCenter:
-        newHeight += delta.dy;
-      case ResizeHandle.bottomRight:
-        newWidth += delta.dx;
-        newHeight += delta.dy;
-    }
-
+  /// Apply resize operation with absolute bounds.
+  CanvasShape applyResize(Rect bounds) {
     // Enforce minimum size
     const minSize = 20.0;
-    if (newWidth < minSize) {
-      newWidth = minSize;
-      if (handle == ResizeHandle.topLeft ||
-          handle == ResizeHandle.centerLeft ||
-          handle == ResizeHandle.bottomLeft) {
-        newX = entity.x + entity.width - minSize;
-      }
-    }
-    if (newHeight < minSize) {
-      newHeight = minSize;
-      if (handle == ResizeHandle.topLeft ||
-          handle == ResizeHandle.topCenter ||
-          handle == ResizeHandle.topRight) {
-        newY = entity.y + entity.height - minSize;
-      }
-    }
+    final newWidth = bounds.width < minSize ? minSize : bounds.width;
+    final newHeight = bounds.height < minSize ? minSize : bounds.height;
 
-    return copyWith(x: newX, y: newY, width: newWidth, height: newHeight);
+    return copyWith(
+      x: bounds.left,
+      y: bounds.top,
+      width: newWidth,
+      height: newHeight,
+    );
   }
 
   /// Apply rotate operation.
@@ -313,11 +270,8 @@ class RectangleCanvasShape extends CanvasShape {
   @override
   RectangleCanvasShape apply(EditOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final delta) => applyMove(delta),
-      ResizeOperation(:final handle, :final delta) => applyResize(
-        handle,
-        delta,
-      ),
+      MoveOperation(:final position) => applyMove(position),
+      ResizeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
 
@@ -456,11 +410,8 @@ class CircleCanvasShape extends CanvasShape {
   @override
   CanvasShape apply(EditOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final delta) => applyMove(delta),
-      ResizeOperation(:final handle, :final delta) => applyResize(
-        handle,
-        delta,
-      ),
+      MoveOperation(:final position) => applyMove(position),
+      ResizeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as CircleCanvasShape;
@@ -588,11 +539,8 @@ class TriangleCanvasShape extends CanvasShape {
   @override
   CanvasShape apply(EditOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final delta) => applyMove(delta),
-      ResizeOperation(:final handle, :final delta) => applyResize(
-        handle,
-        delta,
-      ),
+      MoveOperation(:final position) => applyMove(position),
+      ResizeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as TriangleCanvasShape;
@@ -719,11 +667,8 @@ class TextCanvasShape extends CanvasShape {
   @override
   CanvasShape apply(EditOperation operation) {
     final newShape = switch (operation) {
-      MoveOperation(:final delta) => applyMove(delta),
-      ResizeOperation(:final handle, :final delta) => applyResize(
-        handle,
-        delta,
-      ),
+      MoveOperation(:final position) => applyMove(position),
+      ResizeOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as TextCanvasShape;

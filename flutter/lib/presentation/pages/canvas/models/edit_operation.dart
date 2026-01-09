@@ -1,4 +1,4 @@
-import 'dart:ui' show Offset;
+import 'dart:ui' show Offset, Rect;
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +6,10 @@ import 'package:flutter/foundation.dart';
 import 'edit_intent.dart';
 
 /// An immutable operation that describes a change to a shape.
+///
+/// Operations use **absolute values** (not deltas) so that the last operation
+/// always represents the correct final state. This is a "Last Write Wins" (LWW)
+/// approach that ensures consistency even if intermediate updates are lost.
 ///
 /// Operations are:
 /// - Applied locally (optimistic update)
@@ -15,11 +19,7 @@ import 'edit_intent.dart';
 /// Operations, not state, are the unit of collaboration.
 @immutable
 sealed class EditOperation extends Equatable {
-  const EditOperation({
-    required this.opId,
-    required this.shapeId,
-    this.revision,
-  });
+  const EditOperation({required this.opId, required this.shapeId});
 
   /// Unique identifier for this operation (for deduplication).
   final String opId;
@@ -27,61 +27,52 @@ sealed class EditOperation extends Equatable {
   /// The shape this operation targets.
   final String shapeId;
 
-  /// Monotonically increasing revision number (for ordering/resync).
-  final int? revision;
-
   @override
-  List<Object?> get props => [opId, shapeId, revision];
+  List<Object?> get props => [opId, shapeId];
 }
 
-/// Move a shape by a delta.
+/// Move a shape to an absolute position.
 class MoveOperation extends EditOperation {
   const MoveOperation({
     required super.opId,
     required super.shapeId,
-    required this.delta,
-    super.revision,
+    required this.position,
   });
 
-  final Offset delta;
+  /// The final absolute position (top-left corner) of the shape.
+  final Offset position;
 
   @override
-  List<Object?> get props => [...super.props, delta];
+  List<Object?> get props => [...super.props, position];
 }
 
-/// Resize a shape via a handle.
+/// Resize a shape to absolute bounds.
 class ResizeOperation extends EditOperation {
   const ResizeOperation({
     required super.opId,
     required super.shapeId,
     required this.handle,
-    required this.delta,
-    super.revision,
+    required this.bounds,
   });
 
+  /// The handle used for the resize (for cursor feedback).
   final ResizeHandle handle;
-  final Offset delta;
+
+  /// The final absolute bounds (x, y, width, height) of the shape.
+  final Rect bounds;
 
   @override
-  List<Object?> get props => [...super.props, handle, delta];
+  List<Object?> get props => [...super.props, handle, bounds];
 }
 
 /// Create a new shape.
 class CreateOperation extends EditOperation {
-  const CreateOperation({
-    required super.opId,
-    required super.shapeId,
-    super.revision,
-  });
+  const CreateOperation({required super.opId, required super.shapeId});
 }
 
 /// Delete a shape.
 class DeleteOperation extends EditOperation {
-  const DeleteOperation({
-    required super.opId,
-    required super.shapeId,
-    super.revision,
-  });
+  const DeleteOperation({required super.opId, required super.shapeId});
 }
 
 /// Update a shape's text content.
@@ -90,7 +81,6 @@ class TextEditOperation extends EditOperation {
     required super.opId,
     required super.shapeId,
     required this.text,
-    super.revision,
   });
 
   /// The new text content for the shape.

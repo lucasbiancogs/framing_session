@@ -1,4 +1,4 @@
-import 'dart:ui' show Offset;
+import 'dart:ui' show Offset, Rect;
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
@@ -13,7 +13,6 @@ import '../../../domain/entities/shape.dart';
 import '../../../domain/entities/shape_type.dart';
 import '../../../domain/services/shape_services.dart';
 import '../../view_models/global_providers.dart';
-import 'models/edit_intent.dart';
 import 'models/edit_operation.dart';
 
 final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
@@ -309,9 +308,14 @@ class CanvasVM extends StateNotifier<CanvasState> {
     _appliedOpIds.add(operation.opId);
 
     final newShapes = switch (operation) {
-      MoveOperation(:final shapeId, :final delta) => _applyMove(shapeId, delta),
-      ResizeOperation(:final shapeId, :final handle, :final delta) =>
-        _applyResize(shapeId, handle, delta),
+      MoveOperation(:final shapeId, :final position) => _applyMove(
+        shapeId,
+        position,
+      ),
+      ResizeOperation(:final shapeId, :final bounds) => _applyResize(
+        shapeId,
+        bounds,
+      ),
       TextEditOperation(:final shapeId, :final text) => _applyTextEdit(
         shapeId,
         text,
@@ -366,23 +370,19 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }, (_) {});
   }
 
-  List<CanvasShape> _applyMove(String shapeId, Offset delta) {
+  List<CanvasShape> _applyMove(String shapeId, Offset position) {
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
-      return shape.applyMove(delta);
+      return shape.applyMove(position);
     }).toList();
   }
 
-  List<CanvasShape> _applyResize(
-    String shapeId,
-    ResizeHandle handle,
-    Offset delta,
-  ) {
+  List<CanvasShape> _applyResize(String shapeId, Rect bounds) {
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
-      return shape.applyResize(handle, delta);
+      return shape.applyResize(bounds);
     }).toList();
   }
 

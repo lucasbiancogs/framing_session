@@ -2,15 +2,20 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:whiteboard/data/dtos/cursor_dto.dart';
+import 'package:whiteboard/data/dtos/operation_dto.dart';
 import 'package:whiteboard/domain/entities/cursor.dart';
+import 'package:whiteboard/domain/entities/operation.dart';
 
 abstract class CanvasRepository {
   Future<void> broadcastCursor(String sessionId, Cursor cursor);
   Future<Stream<Cursor>> listenToCursors(String sessionId);
+  Future<void> broadcastOperation(String sessionId, Operation operation);
+  Future<Stream<Operation>> listenToOperations(String sessionId);
 }
 
 class _CanvasKeys {
   static const String cursorEvent = 'cursor_position';
+  static const String operationEvent = 'operation';
   static String broadcastChannel(String sessionId) => 'canvas:$sessionId';
 }
 
@@ -19,12 +24,13 @@ class CanvasRepositoryImpl implements CanvasRepository {
 
   final SupabaseClient _client;
 
-  StreamController<Cursor>? _broadcastController;
+  StreamController<Cursor>? _cursorController;
+  StreamController<Operation>? _operationController;
   RealtimeChannel? _broadcastChannel;
 
   @override
   Future<Stream<Cursor>> listenToCursors(String sessionId) async {
-    _broadcastController ??= StreamController<Cursor>.broadcast();
+    _cursorController ??= StreamController<Cursor>.broadcast();
     _broadcastChannel = _client.channel(
       _CanvasKeys.broadcastChannel(sessionId),
     );
@@ -33,17 +39,17 @@ class CanvasRepositoryImpl implements CanvasRepository {
         .onBroadcast(
           event: _CanvasKeys.cursorEvent,
           callback: (payload) {
-            _broadcastController?.add(CursorDto.fromJson(payload).toEntity());
+            _cursorController?.add(CursorDto.fromJson(payload).toEntity());
           },
         )
         .subscribe();
 
-    _broadcastController!.onCancel = () {
-      _broadcastController?.close();
-      _broadcastController = null;
+    _cursorController!.onCancel = () {
+      _cursorController?.close();
+      _cursorController = null;
     };
 
-    return _broadcastController!.stream;
+    return _cursorController!.stream;
   }
 
   @override
@@ -51,6 +57,40 @@ class CanvasRepositoryImpl implements CanvasRepository {
     await _broadcastChannel!.sendBroadcastMessage(
       event: _CanvasKeys.cursorEvent,
       payload: CursorDto.fromEntity(cursor).toJson(),
+    );
+  }
+
+  @override
+  Future<Stream<Operation>> listenToOperations(String sessionId) async {
+    _operationController ??= StreamController<Operation>.broadcast();
+    _broadcastChannel = _client.channel(
+      _CanvasKeys.broadcastChannel(sessionId),
+    );
+
+    _broadcastChannel!
+        .onBroadcast(
+          event: _CanvasKeys.operationEvent,
+          callback: (payload) {
+            _operationController?.add(
+              OperationDto.fromJson(payload).toEntity(),
+            );
+          },
+        )
+        .subscribe();
+
+    _operationController!.onCancel = () {
+      _operationController?.close();
+      _operationController = null;
+    };
+
+    return _operationController!.stream;
+  }
+
+  @override
+  Future<void> broadcastOperation(String sessionId, Operation operation) async {
+    await _broadcastChannel!.sendBroadcastMessage(
+      event: _CanvasKeys.operationEvent,
+      payload: OperationDto.fromEntity(operation).toJson(),
     );
   }
 }
