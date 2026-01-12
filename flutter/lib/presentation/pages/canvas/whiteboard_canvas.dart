@@ -115,7 +115,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // ---------------------------------------------------------------------------
 
   void _handlePointerDown(Offset screenPosition, CanvasLoaded state) {
-    final position = _toCanvasPosition(screenPosition, state);
+    final position = vm.toCanvasPosition(screenPosition);
 
     collaborativeVm.broadcastCursor(position);
 
@@ -124,23 +124,21 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       vm.stopTextEdit();
     }
 
-    // Hit test shapes using CanvasShape (top-down, last shape is on top)
-    for (final shape in state.shapes.reversed) {
-      final intent = shape.getEditIntent(position);
+    // Hit test shapes using ViewModel
+    final hitResult = vm.getIntentAtPosition(position);
 
-      if (intent != null) {
-        _shapeInteractionState = _ShapeInteractionState(
-          shapeId: shape.id,
-          intent: intent,
-          dragStartPosition: position,
-          initialBounds: shape.bounds,
-        );
-        _panInteractionState = null;
+    if (hitResult != null) {
+      _shapeInteractionState = _ShapeInteractionState(
+        shapeId: hitResult.shapeId,
+        intent: hitResult.intent,
+        dragStartPosition: position,
+        initialBounds: hitResult.bounds,
+      );
+      _panInteractionState = null;
 
-        // Select the shape
-        vm.selectShape(shape.id);
-        return;
-      }
+      // Select the shape
+      vm.selectShape(hitResult.shapeId);
+      return;
     }
 
     // Clicked on empty space — start panning and deselect
@@ -153,6 +151,9 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handlePointerSignal(PointerSignalEvent event, CanvasLoaded state) {
+    final position = vm.toCanvasPosition(event.localPosition);
+    collaborativeVm.broadcastCursor(position);
+
     if (event is PointerScrollEvent) {
       final newPanOffset = state.panOffset - event.scrollDelta;
       vm.setPanOffset(newPanOffset);
@@ -169,7 +170,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handlePointerMove(Offset screenPosition, CanvasLoaded state) {
-    final position = _toCanvasPosition(screenPosition, state);
+    final position = vm.toCanvasPosition(screenPosition);
 
     collaborativeVm.broadcastCursor(position);
 
@@ -190,7 +191,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     // Calculate the total delta from the drag start
     final totalDelta = position - _shapeInteractionState!.dragStartPosition;
 
-    final operation = _createOperation(
+    final operation = vm.getOperationByIntent(
       shapeId: _shapeInteractionState!.shapeId,
       intent: _shapeInteractionState!.intent,
       initialBounds: _shapeInteractionState!.initialBounds,
@@ -209,25 +210,25 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handleDoubleTap(Offset screenPosition, CanvasLoaded state) {
-    final position = _toCanvasPosition(screenPosition, state);
+    final position = vm.toCanvasPosition(screenPosition);
 
     // First check if we're double-tapping on an existing shape to edit text
-    for (final canvasShape in state.shapes.reversed) {
-      if (canvasShape.hitTest(position)) {
-        // Start text editing for this shape
-        _textController.text = canvasShape.entity.text ?? '';
-        vm.startTextEdit(canvasShape.id);
-        // Request focus after the overlay is built
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _textFocusNode.requestFocus();
-          // Select all text for easy replacement
-          _textController.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: _textController.text.length,
-          );
-        });
-        return;
-      }
+    final hitShapeId = vm.hitTestPosition(position);
+
+    if (hitShapeId != null) {
+      final shape = state.shapes.firstWhere((s) => s.id == hitShapeId);
+      _textController.text = shape.entity.text ?? '';
+      vm.startTextEdit(hitShapeId);
+      // Request focus after the overlay is built
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _textFocusNode.requestFocus();
+        // Select all text for easy replacement
+        _textController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _textController.text.length,
+        );
+      });
+      return;
     }
 
     // If not on a shape, create a new shape (if tool is not select)
@@ -253,27 +254,24 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handlePointerHover(Offset screenPosition, CanvasLoaded state) {
-    final position = _toCanvasPosition(screenPosition, state);
+    final position = vm.toCanvasPosition(screenPosition);
 
     collaborativeVm.broadcastCursor(position);
 
-    for (final shape in state.shapes.reversed) {
-      final intent = shape.getEditIntent(position);
+    final hitResult = vm.getIntentAtPosition(position);
 
-      if (intent != null) {
-        final newCursor = switch (intent) {
-          final ResizeIntent intent => intent.handle.systemMouseCursor,
-          _ => SystemMouseCursors.basic,
-        };
+    if (hitResult != null) {
+      final newCursor = switch (hitResult.intent) {
+        final ResizeIntent intent => intent.handle.systemMouseCursor,
+        _ => SystemMouseCursors.basic,
+      };
 
-        if (newCursor != _hoverCursor) {
-          setState(() {
-            _hoverCursor = newCursor;
-          });
-        }
-
-        return;
+      if (newCursor != _hoverCursor) {
+        setState(() {
+          _hoverCursor = newCursor;
+        });
       }
+      return;
     }
 
     if (_hoverCursor != null) {
@@ -281,101 +279,6 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
         _hoverCursor = null;
       });
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
-  /// Convert screen position to canvas position (accounting for pan/zoom).
-  Offset _toCanvasPosition(Offset screenPosition, CanvasLoaded state) {
-    return (screenPosition - state.panOffset) / state.zoom;
-  }
-
-  /// Create an operation from an intent, initial bounds, and total delta.
-  ///
-  /// Operations use absolute values (final position/bounds) rather than deltas,
-  /// so if intermediate updates are lost, the last operation still represents
-  /// the correct final state.
-  CanvasOperation? _createOperation({
-    required String shapeId,
-    required EditIntent intent,
-    required Rect initialBounds,
-    required Offset totalDelta,
-  }) {
-    final opId = const Uuid().v4();
-
-    return switch (intent) {
-      MoveIntent() => MoveShapeOperation(
-        opId: opId,
-        shapeId: shapeId,
-        position: initialBounds.topLeft + totalDelta,
-      ),
-      ResizeIntent(:final handle) => ResizeShapeOperation(
-        opId: opId,
-        shapeId: shapeId,
-        handle: handle,
-        bounds: _calculateNewBounds(initialBounds, handle, totalDelta),
-      ),
-    };
-  }
-
-  /// Calculate new bounds based on initial bounds, handle, and total delta.
-  Rect _calculateNewBounds(
-    Rect initialBounds,
-    ResizeHandle handle,
-    Offset totalDelta,
-  ) {
-    var left = initialBounds.left;
-    var top = initialBounds.top;
-    var right = initialBounds.right;
-    var bottom = initialBounds.bottom;
-
-    switch (handle) {
-      case ResizeHandle.topLeft:
-        left += totalDelta.dx;
-        top += totalDelta.dy;
-      case ResizeHandle.topCenter:
-        top += totalDelta.dy;
-      case ResizeHandle.topRight:
-        right += totalDelta.dx;
-        top += totalDelta.dy;
-      case ResizeHandle.centerLeft:
-        left += totalDelta.dx;
-      case ResizeHandle.centerRight:
-        right += totalDelta.dx;
-      case ResizeHandle.bottomLeft:
-        left += totalDelta.dx;
-        bottom += totalDelta.dy;
-      case ResizeHandle.bottomCenter:
-        bottom += totalDelta.dy;
-      case ResizeHandle.bottomRight:
-        right += totalDelta.dx;
-        bottom += totalDelta.dy;
-    }
-
-    // Ensure minimum size and prevent inverted bounds
-    const minSize = 20.0;
-    if (right - left < minSize) {
-      if (handle == ResizeHandle.topLeft ||
-          handle == ResizeHandle.centerLeft ||
-          handle == ResizeHandle.bottomLeft) {
-        left = right - minSize;
-      } else {
-        right = left + minSize;
-      }
-    }
-    if (bottom - top < minSize) {
-      if (handle == ResizeHandle.topLeft ||
-          handle == ResizeHandle.topCenter ||
-          handle == ResizeHandle.topRight) {
-        top = bottom - minSize;
-      } else {
-        bottom = top + minSize;
-      }
-    }
-
-    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   // ---------------------------------------------------------------------------

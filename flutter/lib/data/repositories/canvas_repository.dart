@@ -28,21 +28,28 @@ class CanvasRepositoryImpl implements CanvasRepository {
   StreamController<Operation>? _operationController;
   RealtimeChannel? _broadcastChannel;
 
+  RealtimeChannel getBroadcastChannel(String sessionId) {
+    if (_broadcastChannel != null) {
+      return _broadcastChannel!;
+    }
+
+    _broadcastChannel ??= _client
+        .channel(_CanvasKeys.broadcastChannel(sessionId))
+        .subscribe();
+
+    return _broadcastChannel!;
+  }
+
   @override
   Future<Stream<Cursor>> listenToCursors(String sessionId) async {
     _cursorController ??= StreamController<Cursor>.broadcast();
-    _broadcastChannel = _client.channel(
-      _CanvasKeys.broadcastChannel(sessionId),
-    );
 
-    _broadcastChannel!
-        .onBroadcast(
-          event: _CanvasKeys.cursorEvent,
-          callback: (payload) {
-            _cursorController?.add(CursorDto.fromJson(payload).toEntity());
-          },
-        )
-        .subscribe();
+    getBroadcastChannel(sessionId).onBroadcast(
+      event: _CanvasKeys.cursorEvent,
+      callback: (payload) {
+        _cursorController?.add(CursorDto.fromJson(payload).toEntity());
+      },
+    );
 
     _cursorController!.onCancel = () {
       _cursorController?.close();
@@ -63,20 +70,13 @@ class CanvasRepositoryImpl implements CanvasRepository {
   @override
   Future<Stream<Operation>> listenToOperations(String sessionId) async {
     _operationController ??= StreamController<Operation>.broadcast();
-    _broadcastChannel = _client.channel(
-      _CanvasKeys.broadcastChannel(sessionId),
-    );
 
-    _broadcastChannel!
-        .onBroadcast(
-          event: _CanvasKeys.operationEvent,
-          callback: (payload) {
-            _operationController?.add(
-              OperationDto.fromJson(payload).toEntity(),
-            );
-          },
-        )
-        .subscribe();
+    getBroadcastChannel(sessionId).onBroadcast(
+      event: _CanvasKeys.operationEvent,
+      callback: (payload) {
+        _operationController?.add(OperationDto.fromJson(payload).toEntity());
+      },
+    );
 
     _operationController!.onCancel = () {
       _operationController?.close();

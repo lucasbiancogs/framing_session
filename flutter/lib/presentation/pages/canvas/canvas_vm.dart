@@ -3,6 +3,7 @@ import 'dart:ui' show Offset, Rect;
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
 
@@ -13,6 +14,7 @@ import '../../../domain/entities/shape_type.dart';
 import '../../../domain/services/shape_services.dart';
 import '../../view_models/global_providers.dart';
 import 'models/canvas_operation.dart';
+import 'models/edit_intent.dart';
 
 final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
   (ref) => CanvasVM(ref.watch(shapeServices), ref.watch(sessionIdProvider)),
@@ -178,6 +180,119 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     // Schedule debounced persistence for update operations
     _scheduleDebouncedPersist(operation);
+  }
+
+  CanvasOperation? getOperationByIntent({
+    required String shapeId,
+    required EditIntent intent,
+    required Rect initialBounds,
+    required Offset totalDelta,
+  }) {
+    final opId = const Uuid().v4();
+
+    return switch (intent) {
+      MoveIntent() => MoveShapeOperation(
+        opId: opId,
+        shapeId: shapeId,
+        position: initialBounds.topLeft + totalDelta,
+      ),
+      ResizeIntent(:final handle) => ResizeShapeOperation(
+        opId: opId,
+        shapeId: shapeId,
+        handle: handle,
+        bounds: _calculateNewBounds(initialBounds, handle, totalDelta),
+      ),
+    };
+  }
+
+  Rect _calculateNewBounds(
+    Rect initialBounds,
+    ResizeHandle handle,
+    Offset totalDelta,
+  ) {
+    var left = initialBounds.left;
+    var top = initialBounds.top;
+    var right = initialBounds.right;
+    var bottom = initialBounds.bottom;
+
+    switch (handle) {
+      case ResizeHandle.topLeft:
+        left += totalDelta.dx;
+        top += totalDelta.dy;
+      case ResizeHandle.topCenter:
+        top += totalDelta.dy;
+      case ResizeHandle.topRight:
+        right += totalDelta.dx;
+        top += totalDelta.dy;
+      case ResizeHandle.centerLeft:
+        left += totalDelta.dx;
+      case ResizeHandle.centerRight:
+        right += totalDelta.dx;
+      case ResizeHandle.bottomLeft:
+        left += totalDelta.dx;
+        bottom += totalDelta.dy;
+      case ResizeHandle.bottomCenter:
+        bottom += totalDelta.dy;
+      case ResizeHandle.bottomRight:
+        right += totalDelta.dx;
+        bottom += totalDelta.dy;
+    }
+
+    // Ensure minimum size and prevent inverted bounds
+    const minSize = 20.0;
+    if (right - left < minSize) {
+      if (handle == ResizeHandle.topLeft ||
+          handle == ResizeHandle.centerLeft ||
+          handle == ResizeHandle.bottomLeft) {
+        left = right - minSize;
+      } else {
+        right = left + minSize;
+      }
+    }
+    if (bottom - top < minSize) {
+      if (handle == ResizeHandle.topLeft ||
+          handle == ResizeHandle.topCenter ||
+          handle == ResizeHandle.topRight) {
+        top = bottom - minSize;
+      } else {
+        bottom = top + minSize;
+      }
+    }
+
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  /// Convert screen position to canvas position (accounting for pan/zoom).
+  Offset toCanvasPosition(Offset screenPosition) {
+    return (screenPosition - _loadedState.panOffset) / _loadedState.zoom;
+  }
+
+  /// Get the edit intent at a canvas position.
+  /// Returns a tuple of (shapeId, intent, bounds) if a shape is hit, null otherwise.
+  ({String shapeId, EditIntent intent, Rect bounds})? getIntentAtPosition(
+    Offset canvasPosition,
+  ) {
+    if (state is! CanvasLoaded) return null;
+
+    for (final shape in _loadedState.shapes.reversed) {
+      final intent = shape.getEditIntent(canvasPosition);
+      if (intent != null) {
+        return (shapeId: shape.id, intent: intent, bounds: shape.bounds);
+      }
+    }
+    return null;
+  }
+
+  /// Hit test a canvas position and return the shape ID if found.
+  String? hitTestPosition(Offset canvasPosition) {
+    if (state is! CanvasLoaded) return null;
+
+    for (final shape in _loadedState.shapes.reversed) {
+      if (shape.hitTest(canvasPosition)) {
+        return shape.id;
+      }
+    }
+    return null;
   }
 
   /// Schedule debounced persistence for update operations.
