@@ -24,12 +24,16 @@ final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
 enum CanvasTool { select, rectangle, circle, triangle, text }
 
 class CanvasVM extends StateNotifier<CanvasState> {
-  CanvasVM(this._shapeServices, this.sessionId) : super(const CanvasLoading()) {
+  CanvasVM(this._shapeServices, this._sessionId)
+    : super(const CanvasLoading()) {
     _loadShapes();
   }
 
   final ShapeServices _shapeServices;
-  final String sessionId;
+  final String _sessionId;
+
+  final double gridSize = 20.0;
+  final double initialShapeSize = 150.0;
 
   /// Set of applied operation IDs (for deduplication).
   final Set<String> _appliedOpIds = {};
@@ -52,7 +56,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   }
 
   Future<void> _loadShapes() async {
-    final result = await _shapeServices.getSessionShapes(sessionId);
+    final result = await _shapeServices.getSessionShapes(_sessionId);
 
     result.fold(
       (exception) => state = CanvasError(exception),
@@ -105,6 +109,13 @@ class CanvasVM extends StateNotifier<CanvasState> {
     if (state is! CanvasLoaded) return;
 
     state = _loadedState.copyWith(currentColor: color);
+  }
+
+  /// Toggle snap-to-grid mode.
+  void toggleSnapToGrid() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(snapToGrid: !_loadedState.snapToGrid);
   }
 
   /// Start editing text for the currently selected shape.
@@ -224,19 +235,53 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }, (_) {});
   }
 
+  // ---------------------------------------------------------------------------
+  // Snap-to-grid helpers
+  // ---------------------------------------------------------------------------
+
+  /// Snap a value to the nearest grid point.
+  double _snapValue(double value) {
+    return (value / gridSize).round() * gridSize;
+  }
+
+  /// Snap an offset to the grid.
+  Offset _snapOffset(Offset offset) {
+    return Offset(_snapValue(offset.dx), _snapValue(offset.dy));
+  }
+
+  /// Snap a rect to the grid.
+  Rect _snapRect(Rect rect) {
+    return Rect.fromLTRB(
+      _snapValue(rect.left),
+      _snapValue(rect.top),
+      _snapValue(rect.right),
+      _snapValue(rect.bottom),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operation application helpers
+  // ---------------------------------------------------------------------------
+
   List<CanvasShape> _applyMove(String shapeId, Offset position) {
+    final snappedPosition = _loadedState.snapToGrid
+        ? _snapOffset(position)
+        : position;
+
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
-      return shape.applyMove(position);
+      return shape.applyMove(snappedPosition);
     }).toList();
   }
 
   List<CanvasShape> _applyResize(String shapeId, Rect bounds) {
+    final snappedBounds = _loadedState.snapToGrid ? _snapRect(bounds) : bounds;
+
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
-      return shape.applyResize(bounds);
+      return shape.applyResize(snappedBounds);
     }).toList();
   }
 
@@ -251,16 +296,14 @@ class CanvasVM extends StateNotifier<CanvasState> {
   List<CanvasShape> _applyCreate(CreateShapeOperation operation) {
     if (state is! CanvasLoaded) return _loadedState.shapes;
 
-    final shapeSize = 150.0;
-
     final shape = Shape(
       id: operation.shapeId,
-      sessionId: sessionId,
+      sessionId: _sessionId,
       shapeType: operation.shapeType,
       x: operation.x,
       y: operation.y,
-      width: shapeSize,
-      height: shapeSize,
+      width: initialShapeSize,
+      height: initialShapeSize,
       color: operation.color,
       rotation: 0,
     );
@@ -317,6 +360,7 @@ class CanvasLoaded extends CanvasState {
     this.zoom = 1.0,
     this.currentTool = CanvasTool.select,
     this.currentColor = '#4ED09A',
+    this.snapToGrid = false,
   });
 
   /// All shapes in the session.
@@ -342,6 +386,9 @@ class CanvasLoaded extends CanvasState {
   /// Currently selected color for new shapes.
   final String currentColor;
 
+  /// Whether snap-to-grid is enabled.
+  final bool snapToGrid;
+
   @override
   List<Object?> get props => [
     shapes,
@@ -351,6 +398,7 @@ class CanvasLoaded extends CanvasState {
     zoom,
     currentTool,
     currentColor,
+    snapToGrid,
   ];
 
   CanvasPersistError toPersistError(BaseException exception) {
@@ -363,6 +411,7 @@ class CanvasLoaded extends CanvasState {
       zoom: zoom,
       currentTool: currentTool,
       currentColor: currentColor,
+      snapToGrid: snapToGrid,
     );
   }
 
@@ -374,6 +423,7 @@ class CanvasLoaded extends CanvasState {
     double? zoom,
     CanvasTool? currentTool,
     String? currentColor,
+    bool? snapToGrid,
     bool clearSelection = false,
   }) {
     return CanvasLoaded(
@@ -388,6 +438,7 @@ class CanvasLoaded extends CanvasState {
       zoom: zoom ?? this.zoom,
       currentTool: currentTool ?? this.currentTool,
       currentColor: currentColor ?? this.currentColor,
+      snapToGrid: snapToGrid ?? this.snapToGrid,
     );
   }
 
@@ -416,6 +467,7 @@ class CanvasPersistError extends CanvasLoaded {
     super.zoom,
     super.currentTool,
     super.currentColor,
+    super.snapToGrid,
   });
 
   final BaseException exception;

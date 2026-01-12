@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,10 +32,8 @@ class WhiteboardCanvas extends ConsumerStatefulWidget {
 
 class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // Gesture tracking state
-  String? _activeShapeId;
-  EditIntent? _activeIntent;
-  Offset? _dragStartPosition;
-  Rect? _initialBounds;
+  _ShapeInteractionState? _shapeInteractionState;
+  _PanInteractionState? _panInteractionState;
   SystemMouseCursor? _hoverCursor;
 
   // Text editing
@@ -71,6 +70,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
           onPointerUp: (event) => _handlePointerUp(event.localPosition, state),
           onPointerCancel: (event) =>
               _handlePointerUp(event.localPosition, state),
+          onPointerSignal: (event) => _handlePointerSignal(event, state),
           child: GestureDetector(
             // Double-tap to create shape or edit text
             onDoubleTapDown: (details) =>
@@ -86,6 +86,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
                   isEditingText: state.isEditingText,
                   panOffset: state.panOffset,
                   zoom: state.zoom,
+                  gridSize: vm.gridSize,
                 ),
                 size: Size.infinite,
               ),
@@ -128,10 +129,13 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       final intent = shape.getEditIntent(position);
 
       if (intent != null) {
-        _activeShapeId = shape.id;
-        _activeIntent = intent;
-        _dragStartPosition = position;
-        _initialBounds = shape.bounds;
+        _shapeInteractionState = _ShapeInteractionState(
+          shapeId: shape.id,
+          intent: intent,
+          dragStartPosition: position,
+          initialBounds: shape.bounds,
+        );
+        _panInteractionState = null;
 
         // Select the shape
         vm.selectShape(shape.id);
@@ -139,12 +143,29 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       }
     }
 
-    // Clicked on empty space — deselect
-    _activeShapeId = null;
-    _activeIntent = null;
-    _dragStartPosition = null;
-    _initialBounds = null;
+    // Clicked on empty space — start panning and deselect
+    _shapeInteractionState = null;
+    _panInteractionState = _PanInteractionState(
+      initialPanOffset: state.panOffset,
+      dragStartScreenPosition: screenPosition,
+    );
     vm.selectShape(null);
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event, CanvasLoaded state) {
+    if (event is PointerScrollEvent) {
+      final newPanOffset = state.panOffset - event.scrollDelta;
+      vm.setPanOffset(newPanOffset);
+    }
+
+    if (event is PointerScaleEvent) {
+      final focalPoint = event.localPosition;
+      final newZoom = state.zoom * event.scale;
+      final canvasPointAtFocal = (focalPoint - state.panOffset) / state.zoom;
+      final newPanOffset = focalPoint - canvasPointAtFocal * newZoom;
+      vm.setZoom(newZoom);
+      vm.setPanOffset(newPanOffset);
+    }
   }
 
   void _handlePointerMove(Offset screenPosition, CanvasLoaded state) {
@@ -152,20 +173,27 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     collaborativeVm.broadcastCursor(position);
 
-    if (_activeShapeId == null ||
-        _activeIntent == null ||
-        _dragStartPosition == null ||
-        _initialBounds == null) {
+    // Handle panning (when dragging on empty space)
+    if (_panInteractionState != null) {
+      final delta =
+          screenPosition - _panInteractionState!.dragStartScreenPosition;
+      final newPanOffset = _panInteractionState!.initialPanOffset + delta;
+      vm.setPanOffset(newPanOffset);
+      return;
+    }
+
+    // Handle shape interaction
+    if (_shapeInteractionState == null) {
       return;
     }
 
     // Calculate the total delta from the drag start
-    final totalDelta = position - _dragStartPosition!;
+    final totalDelta = position - _shapeInteractionState!.dragStartPosition;
 
     final operation = _createOperation(
-      shapeId: _activeShapeId!,
-      intent: _activeIntent!,
-      initialBounds: _initialBounds!,
+      shapeId: _shapeInteractionState!.shapeId,
+      intent: _shapeInteractionState!.intent,
+      initialBounds: _shapeInteractionState!.initialBounds,
       totalDelta: totalDelta,
     );
 
@@ -176,10 +204,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handlePointerUp(Offset screenPosition, CanvasLoaded state) {
-    _activeShapeId = null;
-    _activeIntent = null;
-    _dragStartPosition = null;
-    _initialBounds = null;
+    _shapeInteractionState = null;
+    _panInteractionState = null;
   }
 
   void _handleDoubleTap(Offset screenPosition, CanvasLoaded state) {
@@ -411,4 +437,28 @@ extension on ResizeHandle {
       ResizeHandle.bottomLeft => SystemMouseCursors.resizeUpRightDownLeft,
     };
   }
+}
+
+class _ShapeInteractionState {
+  _ShapeInteractionState({
+    required this.shapeId,
+    required this.intent,
+    required this.dragStartPosition,
+    required this.initialBounds,
+  });
+
+  final String shapeId;
+  final EditIntent intent;
+  final Offset dragStartPosition;
+  final Rect initialBounds;
+}
+
+class _PanInteractionState {
+  _PanInteractionState({
+    required this.initialPanOffset,
+    required this.dragStartScreenPosition,
+  });
+
+  final Offset initialPanOffset;
+  final Offset dragStartScreenPosition;
 }

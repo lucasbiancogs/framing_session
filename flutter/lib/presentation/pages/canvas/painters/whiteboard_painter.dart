@@ -18,7 +18,8 @@ class WhiteboardPainter extends CustomPainter {
   WhiteboardPainter({
     required this.shapes,
     this.selectedShapeId,
-    this.isEditingText = false,
+    required this.gridSize,
+    required this.isEditingText,
     this.panOffset = Offset.zero,
     this.zoom = 1.0,
     this.showGrid = true,
@@ -30,6 +31,7 @@ class WhiteboardPainter extends CustomPainter {
   final Offset panOffset;
   final double zoom;
   final bool showGrid;
+  final double gridSize;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -67,8 +69,6 @@ class WhiteboardPainter extends CustomPainter {
       ..color = Colors.white.withValues(alpha: 0.05)
       ..strokeWidth = 0.5;
 
-    const gridSize = 25.0;
-
     // Adjust for viewport transform
     final adjustedSize = Size(
       size.width / zoom + panOffset.dx.abs() / zoom,
@@ -93,6 +93,7 @@ class WhiteboardPainter extends CustomPainter {
         isEditingText != oldDelegate.isEditingText ||
         panOffset != oldDelegate.panOffset ||
         zoom != oldDelegate.zoom ||
-        showGrid != oldDelegate.showGrid;
+        showGrid != oldDelegate.showGrid ||
+        gridSize != oldDelegate.gridSize;
   }
 }

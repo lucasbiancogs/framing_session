@@ -122,6 +122,7 @@ class CanvasPage extends ConsumerWidget {
               child: _ToolBar(
                 currentTool: state.currentTool,
                 currentColor: state.currentColor,
+                snapToGrid: state.snapToGrid,
               ),
             ),
           ],
@@ -192,10 +193,15 @@ class _OnlineUsersList extends StatelessWidget {
 
 /// Toolbar for selecting drawing tools.
 class _ToolBar extends ConsumerWidget {
-  const _ToolBar({required this.currentTool, required this.currentColor});
+  const _ToolBar({
+    required this.currentTool,
+    required this.currentColor,
+    required this.snapToGrid,
+  });
 
   final CanvasTool currentTool;
   final String currentColor;
+  final bool snapToGrid;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -259,6 +265,15 @@ class _ToolBar extends ConsumerWidget {
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(width: 8),
+              Container(width: 1, height: 32, color: theme.colorScheme.border),
+              const SizedBox(width: 8),
+              _ToolButton(
+                icon: Icons.grid_4x4,
+                label: 'Snap',
+                isSelected: snapToGrid,
+                onTap: () => vm.toggleSnapToGrid(),
               ),
             ],
           ),
