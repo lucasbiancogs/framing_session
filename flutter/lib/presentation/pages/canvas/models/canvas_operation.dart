@@ -2,8 +2,11 @@ import 'dart:ui' show Offset, Rect;
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
+import 'package:whiteboard/domain/entities/anchor_point.dart';
+import 'package:whiteboard/domain/entities/arrow_type.dart';
 import 'package:whiteboard/domain/entities/operation.dart';
 import 'package:whiteboard/domain/entities/shape_type.dart';
+import 'package:whiteboard/domain/entities/waypoint.dart';
 
 import 'edit_intent.dart';
 
@@ -58,6 +61,27 @@ sealed class CanvasOperation extends Equatable {
         opId: entity.opId,
         shapeId: entity.shapeId,
         text: entity.text,
+      ),
+      // Connector operations
+      CreateConnectorOperation() => CreateConnectorCanvasOperation(
+        opId: entity.opId,
+        connectorId: entity.shapeId,
+        sourceShapeId: entity.sourceShapeId,
+        targetShapeId: entity.targetShapeId,
+        sourceAnchor: entity.sourceAnchor,
+        targetAnchor: entity.targetAnchor,
+        arrowType: entity.arrowType,
+        color: entity.color,
+      ),
+      UpdateConnectorWaypointsOperation() =>
+        UpdateConnectorWaypointsCanvasOperation(
+          opId: entity.opId,
+          connectorId: entity.shapeId,
+          waypoints: entity.waypoints,
+        ),
+      DeleteConnectorOperation() => DeleteConnectorCanvasOperation(
+        opId: entity.opId,
+        connectorId: entity.shapeId,
       ),
     };
   }
@@ -175,4 +199,93 @@ class TextShapeOperation extends CanvasOperation {
 
   @override
   List<Object?> get props => [...super.props, text];
+}
+
+// -------------------------------------------------------------------------
+// Connector Operations
+// -------------------------------------------------------------------------
+
+/// Create a new connector between two shapes.
+class CreateConnectorCanvasOperation extends CanvasOperation {
+  const CreateConnectorCanvasOperation({
+    required super.opId,
+    required this.connectorId,
+    required this.sourceShapeId,
+    required this.targetShapeId,
+    required this.sourceAnchor,
+    required this.targetAnchor,
+    required this.arrowType,
+    required this.color,
+  }) : super(shapeId: connectorId);
+
+  final String connectorId;
+  final String sourceShapeId;
+  final String targetShapeId;
+  final AnchorPoint sourceAnchor;
+  final AnchorPoint targetAnchor;
+  final ArrowType arrowType;
+  final String color;
+
+  @override
+  Operation toEntity() => CreateConnectorOperation(
+    opId: opId,
+    shapeId: connectorId,
+    sourceShapeId: sourceShapeId,
+    targetShapeId: targetShapeId,
+    sourceAnchor: sourceAnchor,
+    targetAnchor: targetAnchor,
+    arrowType: arrowType,
+    color: color,
+  );
+
+  @override
+  List<Object?> get props => [
+    ...super.props,
+    connectorId,
+    sourceShapeId,
+    targetShapeId,
+    sourceAnchor,
+    targetAnchor,
+    arrowType,
+    color,
+  ];
+}
+
+/// Update connector waypoints.
+class UpdateConnectorWaypointsCanvasOperation extends CanvasOperation {
+  const UpdateConnectorWaypointsCanvasOperation({
+    required super.opId,
+    required this.connectorId,
+    required this.waypoints,
+  }) : super(shapeId: connectorId);
+
+  final String connectorId;
+  final List<Waypoint> waypoints;
+
+  @override
+  Operation toEntity() => UpdateConnectorWaypointsOperation(
+    opId: opId,
+    shapeId: connectorId,
+    waypoints: waypoints,
+  );
+
+  @override
+  List<Object?> get props => [...super.props, connectorId, waypoints];
+}
+
+/// Delete a connector.
+class DeleteConnectorCanvasOperation extends CanvasOperation {
+  const DeleteConnectorCanvasOperation({
+    required super.opId,
+    required this.connectorId,
+  }) : super(shapeId: connectorId);
+
+  final String connectorId;
+
+  @override
+  Operation toEntity() =>
+      DeleteConnectorOperation(opId: opId, shapeId: connectorId);
+
+  @override
+  List<Object?> get props => [...super.props, connectorId];
 }

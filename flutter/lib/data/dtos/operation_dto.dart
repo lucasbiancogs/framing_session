@@ -1,4 +1,7 @@
 import 'package:whiteboard/core/errors/inconsistency_error.dart';
+import 'package:whiteboard/data/dtos/anchor_point_dto.dart';
+import 'package:whiteboard/data/dtos/arrow_type_dto.dart';
+import 'package:whiteboard/data/dtos/waypoint_dto.dart';
 import 'package:whiteboard/domain/entities/operation.dart';
 import 'package:whiteboard/domain/entities/shape_type.dart';
 
@@ -8,6 +11,9 @@ class _OperationTypes {
   static const String create = 'create';
   static const String delete = 'delete';
   static const String text = 'text';
+  static const String createConnector = 'create_connector';
+  static const String updateConnectorWaypoints = 'update_connector_waypoints';
+  static const String deleteConnector = 'delete_connector';
 }
 
 sealed class OperationDto {
@@ -30,6 +36,14 @@ sealed class OperationDto {
       _OperationTypes.create => CreateOperationDto.fromJson(json),
       _OperationTypes.delete => DeleteOperationDto.fromJson(json),
       _OperationTypes.text => TextOperationDto.fromJson(json),
+      _OperationTypes.createConnector => CreateConnectorOperationDto.fromJson(
+        json,
+      ),
+      _OperationTypes.updateConnectorWaypoints =>
+        UpdateConnectorWaypointsOperationDto.fromJson(json),
+      _OperationTypes.deleteConnector => DeleteConnectorOperationDto.fromJson(
+        json,
+      ),
       _ => throw InconsistencyError.internal('Unknown operation type: $type'),
     };
   }
@@ -41,6 +55,14 @@ sealed class OperationDto {
       CreateOperation() => CreateOperationDto.fromEntity(entity),
       DeleteOperation() => DeleteOperationDto.fromEntity(entity),
       TextOperation() => TextOperationDto.fromEntity(entity),
+      CreateConnectorOperation() => CreateConnectorOperationDto.fromEntity(
+        entity,
+      ),
+      UpdateConnectorWaypointsOperation() =>
+        UpdateConnectorWaypointsOperationDto.fromEntity(entity),
+      DeleteConnectorOperation() => DeleteConnectorOperationDto.fromEntity(
+        entity,
+      ),
     };
   }
 
@@ -267,4 +289,152 @@ class TextOperationDto extends OperationDto {
 
   @override
   Map<String, dynamic> toJson() => {...super.toJson(), 'text': text};
+}
+
+// -------------------------------------------------------------------------
+// Connector Operation DTOs
+// -------------------------------------------------------------------------
+
+class CreateConnectorOperationDto extends OperationDto {
+  const CreateConnectorOperationDto({
+    required super.opId,
+    required super.shapeId, // connector ID
+    required super.type,
+    required this.sourceShapeId,
+    required this.targetShapeId,
+    required this.sourceAnchor,
+    required this.targetAnchor,
+    required this.arrowType,
+    required this.color,
+  });
+
+  final String sourceShapeId;
+  final String targetShapeId;
+  final AnchorPointDto sourceAnchor;
+  final AnchorPointDto targetAnchor;
+  final ArrowTypeDto arrowType;
+  final String color;
+
+  factory CreateConnectorOperationDto.fromJson(Map<String, dynamic> json) {
+    return CreateConnectorOperationDto(
+      opId: json['op_id'] as String,
+      shapeId: json['shape_id'] as String,
+      type: json['operation_type'] as String,
+      sourceShapeId: json['source_shape_id'] as String,
+      targetShapeId: json['target_shape_id'] as String,
+      sourceAnchor: AnchorPointDto.fromString(json['source_anchor'] as String),
+      targetAnchor: AnchorPointDto.fromString(json['target_anchor'] as String),
+      arrowType: ArrowTypeDto.fromString(json['arrow_type'] as String),
+      color: json['color'] as String,
+    );
+  }
+
+  factory CreateConnectorOperationDto.fromEntity(
+    CreateConnectorOperation entity,
+  ) => CreateConnectorOperationDto(
+    opId: entity.opId,
+    shapeId: entity.shapeId,
+    type: _OperationTypes.createConnector,
+    sourceShapeId: entity.sourceShapeId,
+    targetShapeId: entity.targetShapeId,
+    sourceAnchor: AnchorPointDto.fromString(entity.sourceAnchor.name),
+    targetAnchor: AnchorPointDto.fromString(entity.targetAnchor.name),
+    arrowType: ArrowTypeDto.fromString(entity.arrowType.name),
+    color: entity.color,
+  );
+
+  @override
+  CreateConnectorOperation toEntity() => CreateConnectorOperation(
+    opId: opId,
+    shapeId: shapeId,
+    sourceShapeId: sourceShapeId,
+    targetShapeId: targetShapeId,
+    sourceAnchor: sourceAnchor.toEntity(),
+    targetAnchor: targetAnchor.toEntity(),
+    arrowType: arrowType.toEntity(),
+    color: color,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'source_shape_id': sourceShapeId,
+    'target_shape_id': targetShapeId,
+    'source_anchor': sourceAnchor.raw,
+    'target_anchor': targetAnchor.raw,
+    'arrow_type': arrowType.raw,
+    'color': color,
+  };
+}
+
+class UpdateConnectorWaypointsOperationDto extends OperationDto {
+  const UpdateConnectorWaypointsOperationDto({
+    required super.opId,
+    required super.shapeId, // connector ID
+    required super.type,
+    required this.waypoints,
+  });
+
+  final List<WaypointDto> waypoints;
+
+  factory UpdateConnectorWaypointsOperationDto.fromJson(
+    Map<String, dynamic> json,
+  ) => UpdateConnectorWaypointsOperationDto(
+    opId: json['op_id'] as String,
+    shapeId: json['shape_id'] as String,
+    type: json['operation_type'] as String,
+    waypoints: json['waypoints']
+        ?.map((wp) => WaypointDto.fromJson(wp))
+        .toList(),
+  );
+
+  factory UpdateConnectorWaypointsOperationDto.fromEntity(
+    UpdateConnectorWaypointsOperation entity,
+  ) => UpdateConnectorWaypointsOperationDto(
+    opId: entity.opId,
+    shapeId: entity.shapeId,
+    type: _OperationTypes.updateConnectorWaypoints,
+    waypoints: entity.waypoints
+        .map((wp) => WaypointDto.fromEntity(wp))
+        .toList(),
+  );
+
+  @override
+  UpdateConnectorWaypointsOperation toEntity() =>
+      UpdateConnectorWaypointsOperation(
+        opId: opId,
+        shapeId: shapeId,
+        waypoints: waypoints.map((wp) => wp.toEntity()).toList(),
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {...super.toJson(), 'waypoints': waypoints};
+}
+
+class DeleteConnectorOperationDto extends OperationDto {
+  const DeleteConnectorOperationDto({
+    required super.opId,
+    required super.shapeId, // connector ID
+    required super.type,
+  });
+
+  factory DeleteConnectorOperationDto.fromJson(Map<String, dynamic> json) {
+    return DeleteConnectorOperationDto(
+      opId: json['op_id'] as String,
+      shapeId: json['shape_id'] as String,
+      type: json['operation_type'] as String,
+    );
+  }
+
+  factory DeleteConnectorOperationDto.fromEntity(
+    DeleteConnectorOperation entity,
+  ) => DeleteConnectorOperationDto(
+    opId: entity.opId,
+    shapeId: entity.shapeId,
+    type: _OperationTypes.deleteConnector,
+  );
+
+  @override
+  DeleteConnectorOperation toEntity() =>
+      DeleteConnectorOperation(opId: opId, shapeId: shapeId);
 }

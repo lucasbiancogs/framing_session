@@ -4,7 +4,11 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:whiteboard/domain/entities/anchor_point.dart';
+import 'package:whiteboard/domain/entities/arrow_type.dart';
+import 'package:whiteboard/domain/entities/connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/canvas_connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
 
 import '../../../core/errors/base_faults.dart';
@@ -58,14 +62,40 @@ class CanvasVM extends StateNotifier<CanvasState> {
   }
 
   Future<void> _loadShapes() async {
-    final result = await _shapeServices.getSessionShapes(_sessionId);
-
-    result.fold(
-      (exception) => state = CanvasError(exception),
-      (shapes) => state = CanvasLoaded(
-        shapes: shapes.map(CanvasShape.createCanvasShape).toList(),
-      ),
+    final shapesResult = await _shapeServices.getSessionShapes(_sessionId);
+    final connectorsResult = await _shapeServices.getSessionConnectors(
+      _sessionId,
     );
+
+    shapesResult.fold((exception) => state = CanvasError(exception), (shapes) {
+      final canvasShapes = shapes.map(CanvasShape.createCanvasShape).toList();
+
+      connectorsResult.fold((exception) => state = CanvasError(exception), (
+        connectors,
+      ) {
+        final shapesById = {for (final shape in canvasShapes) shape.id: shape};
+        if (shapesById.length != canvasShapes.length) {
+          return;
+        }
+
+        // Create canvas connectors, filtering out any with missing shapes
+        final canvasConnectors = connectors
+            .map(
+              (c) => CanvasConnector.fromEntity(
+                c,
+                shapesById[c.sourceShapeId]!,
+                shapesById[c.targetShapeId]!,
+              ),
+            )
+            .whereType<CanvasConnector>()
+            .toList();
+
+        state = CanvasLoaded(
+          shapes: canvasShapes,
+          connectors: canvasConnectors,
+        );
+      });
+    });
   }
 
   Future<void> retryLoading() async {
@@ -150,14 +180,22 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   /// Apply an operation to the shape state.
   ///
-  /// This is the single entry point for all shape mutations.
-  /// Operations are applied immutably — shapes are never mutated in place.
+  /// This is the single entry point for all shape and connector mutations.
+  /// Operations are applied immutably — shapes/connectors are never mutated in place.
   void applyOperation(CanvasOperation operation) {
     if (state is! CanvasLoaded) return;
 
     // Deduplicate operations
     if (_appliedOpIds.contains(operation.opId)) return;
     _appliedOpIds.add(operation.opId);
+
+    // Handle connector operations separately
+    if (operation is CreateConnectorCanvasOperation ||
+        operation is UpdateConnectorWaypointsCanvasOperation ||
+        operation is DeleteConnectorCanvasOperation) {
+      _applyConnectorOperation(operation);
+      return;
+    }
 
     final newShapes = switch (operation) {
       MoveShapeOperation(:final shapeId, :final position) => _applyMove(
@@ -174,9 +212,15 @@ class CanvasVM extends StateNotifier<CanvasState> {
       ),
       CreateShapeOperation() => _applyCreate(operation),
       DeleteShapeOperation(:final shapeId) => _applyDelete(shapeId),
+      _ => _loadedState.shapes,
     };
 
     state = _loadedState.copyWith(shapes: newShapes);
+
+    // Rebuild connectors when shapes move/resize
+    if (operation is MoveShapeOperation || operation is ResizeShapeOperation) {
+      _rebuildConnectors();
+    }
 
     // Schedule debounced persistence for update operations
     _scheduleDebouncedPersist(operation);
@@ -452,6 +496,303 @@ class CanvasVM extends StateNotifier<CanvasState> {
       CanvasTool.select => null,
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Connector Methods
+  // ---------------------------------------------------------------------------
+
+  /// Start connecting mode from a shape anchor.
+  void startConnecting(String shapeId, AnchorPoint anchor) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(
+      isConnecting: true,
+      connectingFromShapeId: shapeId,
+      connectingFromAnchor: anchor,
+      selectedShapeId: shapeId,
+    );
+  }
+
+  /// Update the connecting preview position.
+  void updateConnectingPreview(Offset position) {
+    if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
+
+    state = _loadedState.copyWith(connectingPreviewEnd: position);
+  }
+
+  /// Cancel connecting mode.
+  void cancelConnecting() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(clearConnecting: true);
+  }
+
+  /// Complete connecting to a target shape anchor.
+  void completeConnecting(String targetShapeId, AnchorPoint targetAnchor) {
+    if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
+
+    final sourceShapeId = _loadedState.connectingFromShapeId;
+    final sourceAnchor = _loadedState.connectingFromAnchor;
+
+    if (sourceShapeId == null || sourceAnchor == null) return;
+
+    // Don't allow self-connections
+    if (sourceShapeId == targetShapeId) {
+      cancelConnecting();
+      return;
+    }
+
+    final operation = CreateConnectorCanvasOperation(
+      opId: const Uuid().v4(),
+      connectorId: const Uuid().v4(),
+      sourceShapeId: sourceShapeId,
+      targetShapeId: targetShapeId,
+      sourceAnchor: sourceAnchor,
+      targetAnchor: targetAnchor,
+      arrowType: ArrowType.end,
+      color: _loadedState.currentColor,
+    );
+
+    applyOperation(operation);
+
+    state = _loadedState.copyWith(clearConnecting: true);
+  }
+
+  /// Complete connecting by creating a new shape and connector.
+  void completeConnectingWithNewShape(Offset position) {
+    if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
+
+    final sourceShapeId = _loadedState.connectingFromShapeId;
+    final sourceAnchor = _loadedState.connectingFromAnchor;
+
+    if (sourceShapeId == null || sourceAnchor == null) return;
+
+    // Determine the target anchor based on source anchor (opposite side)
+    final targetAnchor = _getOppositeAnchor(sourceAnchor);
+
+    // Create new shape
+    final shapeId = const Uuid().v4();
+    final shapeOperation = CreateShapeOperation(
+      opId: const Uuid().v4(),
+      shapeId: shapeId,
+      shapeType: ShapeType.rectangle,
+      color: _loadedState.currentColor,
+      x: position.dx - initialShapeSize / 2,
+      y: position.dy - initialShapeSize / 2,
+    );
+
+    applyOperation(shapeOperation);
+
+    // Create connector
+    final connectorOperation = CreateConnectorCanvasOperation(
+      opId: const Uuid().v4(),
+      connectorId: const Uuid().v4(),
+      sourceShapeId: sourceShapeId,
+      targetShapeId: shapeId,
+      sourceAnchor: sourceAnchor,
+      targetAnchor: targetAnchor,
+      arrowType: ArrowType.end,
+      color: _loadedState.currentColor,
+    );
+
+    applyOperation(connectorOperation);
+
+    state = _loadedState.copyWith(clearConnecting: true);
+  }
+
+  /// Get the opposite anchor point.
+  AnchorPoint _getOppositeAnchor(AnchorPoint anchor) {
+    return switch (anchor) {
+      AnchorPoint.top => AnchorPoint.bottom,
+      AnchorPoint.bottom => AnchorPoint.top,
+      AnchorPoint.left => AnchorPoint.right,
+      AnchorPoint.right => AnchorPoint.left,
+    };
+  }
+
+  /// Select a connector by ID.
+  void selectConnector(String? connectorId) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(
+      selectedConnectorId: connectorId,
+      selectedShapeId: null,
+    );
+  }
+
+  /// Delete the currently selected connector.
+  void deleteSelectedConnector() {
+    if (state is! CanvasLoaded) return;
+
+    final connectorId = _loadedState.selectedConnectorId;
+    if (connectorId == null) return;
+
+    final operation = DeleteConnectorCanvasOperation(
+      opId: const Uuid().v4(),
+      connectorId: connectorId,
+    );
+
+    applyOperation(operation);
+  }
+
+  /// Hit test connectors at a canvas position.
+  String? hitTestConnector(Offset canvasPosition) {
+    if (state is! CanvasLoaded) return null;
+
+    for (final connector in _loadedState.connectors.reversed) {
+      if (connector.hitTestSegment(canvasPosition) >= 0) {
+        return connector.id;
+      }
+    }
+
+    return null;
+  }
+
+  /// Hit test anchor points on the selected shape.
+  AnchorPoint? hitTestAnchor(Offset canvasPosition) {
+    if (state is! CanvasLoaded) return null;
+
+    final selectedShape = _loadedState.selectedShape;
+    if (selectedShape == null) return null;
+
+    return selectedShape.hitTestAnchor(canvasPosition);
+  }
+
+  /// Rebuild connectors after shapes have moved.
+  ///
+  /// This updates the connector references to point to the updated shapes.
+  void _rebuildConnectors() {
+    if (state is! CanvasLoaded) return;
+
+    final shapesById = _loadedState.shapesById;
+
+    final updatedConnectors = _loadedState.connectors
+        .map((connector) {
+          final sourceShape = shapesById[connector.entity.sourceShapeId];
+          final targetShape = shapesById[connector.entity.targetShapeId];
+
+          if (sourceShape == null || targetShape == null) {
+            return null;
+          }
+
+          // Use fromEntity to ensure start/end waypoints are recalculated
+          // when shapes move
+          return CanvasConnector.fromEntity(
+            connector.entity,
+            sourceShape,
+            targetShape,
+          );
+        })
+        .whereType<CanvasConnector>()
+        .toList();
+
+    state = _loadedState.copyWith(connectors: updatedConnectors);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Extended applyOperation to handle connector operations
+  // ---------------------------------------------------------------------------
+
+  /// Apply a connector operation.
+  void _applyConnectorOperation(CanvasOperation operation) {
+    switch (operation) {
+      case CreateConnectorCanvasOperation():
+        _applyCreateConnector(operation);
+      case UpdateConnectorWaypointsCanvasOperation():
+        _applyUpdateConnectorWaypoints(operation);
+      case DeleteConnectorCanvasOperation():
+        _applyDeleteConnector(operation);
+      default:
+        break;
+    }
+  }
+
+  void _applyCreateConnector(CreateConnectorCanvasOperation operation) {
+    if (state is! CanvasLoaded) return;
+
+    final shapesById = _loadedState.shapesById;
+    final sourceShape = shapesById[operation.sourceShapeId];
+    final targetShape = shapesById[operation.targetShapeId];
+
+    if (sourceShape == null || targetShape == null) return;
+
+    final connector = Connector(
+      id: operation.connectorId,
+      sessionId: _sessionId,
+      sourceShapeId: operation.sourceShapeId,
+      targetShapeId: operation.targetShapeId,
+      sourceAnchor: operation.sourceAnchor,
+      targetAnchor: operation.targetAnchor,
+      waypoints: [],
+      arrowType: operation.arrowType,
+      color: operation.color,
+    );
+
+    final canvasConnector = CanvasConnector.fromEntity(
+      connector,
+      sourceShape,
+      targetShape,
+    );
+
+    state = _loadedState.copyWith(
+      connectors: [..._loadedState.connectors, canvasConnector],
+    );
+
+    // Persist to database
+    _shapeServices.createConnector(connector);
+  }
+
+  void _applyUpdateConnectorWaypoints(
+    UpdateConnectorWaypointsCanvasOperation operation,
+  ) {
+    if (state is! CanvasLoaded) return;
+
+    final updatedConnectors = _loadedState.connectors.map((connector) {
+      if (connector.id != operation.connectorId) return connector;
+
+      final updatedEntity = Connector(
+        id: connector.entity.id,
+        sessionId: connector.entity.sessionId,
+        sourceShapeId: connector.entity.sourceShapeId,
+        targetShapeId: connector.entity.targetShapeId,
+        sourceAnchor: connector.entity.sourceAnchor,
+        targetAnchor: connector.entity.targetAnchor,
+        arrowType: connector.entity.arrowType,
+        color: connector.entity.color,
+        waypoints: operation.waypoints,
+        createdAt: connector.entity.createdAt,
+        updatedAt: connector.entity.updatedAt,
+      );
+
+      // Use fromEntity to ensure start/end waypoints are included
+      return CanvasConnector.fromEntity(
+        updatedEntity,
+        connector.sourceShape,
+        connector.targetShape,
+      );
+    }).toList();
+
+    state = _loadedState.copyWith(connectors: updatedConnectors);
+  }
+
+  void _applyDeleteConnector(DeleteConnectorCanvasOperation operation) {
+    if (state is! CanvasLoaded) return;
+
+    final newConnectors = _loadedState.connectors
+        .where((c) => c.id != operation.connectorId)
+        .toList();
+
+    state = _loadedState.copyWith(
+      connectors: newConnectors,
+      selectedConnectorId:
+          _loadedState.selectedConnectorId == operation.connectorId
+          ? null
+          : _loadedState.selectedConnectorId,
+    );
+
+    // Persist to database
+    _shapeServices.deleteConnector(operation.connectorId);
+  }
 }
 
 @immutable
@@ -469,20 +810,33 @@ class CanvasLoading extends CanvasState {
 class CanvasLoaded extends CanvasState {
   const CanvasLoaded({
     required this.shapes,
+    this.connectors = const [],
     this.selectedShapeId,
+    this.selectedConnectorId,
     this.isEditingText = false,
     this.panOffset = Offset.zero,
     this.zoom = 1.0,
     this.currentTool = CanvasTool.select,
     this.currentColor = '#4ED09A',
     this.snapToGrid = false,
+    // Connecting mode state
+    this.isConnecting = false,
+    this.connectingFromShapeId,
+    this.connectingFromAnchor,
+    this.connectingPreviewEnd,
   });
 
   /// All shapes in the session.
   final List<CanvasShape> shapes;
 
+  /// All connectors in the session.
+  final List<CanvasConnector> connectors;
+
   /// Currently selected shape ID.
   final String? selectedShapeId;
+
+  /// Currently selected connector ID.
+  final String? selectedConnectorId;
 
   /// Whether the selected shape's text is being edited (shows TextField overlay).
   final bool isEditingText;
@@ -504,48 +858,85 @@ class CanvasLoaded extends CanvasState {
   /// Whether snap-to-grid is enabled.
   final bool snapToGrid;
 
+  // --- Connecting mode state ---
+
+  /// Whether the user is currently creating a connector.
+  final bool isConnecting;
+
+  /// The shape ID being connected from.
+  final String? connectingFromShapeId;
+
+  /// The anchor point being connected from.
+  final AnchorPoint? connectingFromAnchor;
+
+  /// The current cursor position for preview line.
+  final Offset? connectingPreviewEnd;
+
   @override
   List<Object?> get props => [
     shapes,
+    connectors,
     selectedShapeId,
+    selectedConnectorId,
     isEditingText,
     panOffset,
     zoom,
     currentTool,
     currentColor,
     snapToGrid,
+    isConnecting,
+    connectingFromShapeId,
+    connectingFromAnchor,
+    connectingPreviewEnd,
   ];
 
   CanvasPersistError toPersistError(BaseException exception) {
     return CanvasPersistError(
       exception: exception,
       shapes: shapes,
+      connectors: connectors,
       selectedShapeId: selectedShapeId,
+      selectedConnectorId: selectedConnectorId,
       isEditingText: isEditingText,
       panOffset: panOffset,
       zoom: zoom,
       currentTool: currentTool,
       currentColor: currentColor,
       snapToGrid: snapToGrid,
+      isConnecting: isConnecting,
+      connectingFromShapeId: connectingFromShapeId,
+      connectingFromAnchor: connectingFromAnchor,
+      connectingPreviewEnd: connectingPreviewEnd,
     );
   }
 
   CanvasLoaded copyWith({
     List<CanvasShape>? shapes,
+    List<CanvasConnector>? connectors,
     String? selectedShapeId,
+    String? selectedConnectorId,
     bool? isEditingText,
     Offset? panOffset,
     double? zoom,
     CanvasTool? currentTool,
     String? currentColor,
     bool? snapToGrid,
+    bool? isConnecting,
+    String? connectingFromShapeId,
+    AnchorPoint? connectingFromAnchor,
+    Offset? connectingPreviewEnd,
     bool clearSelection = false,
+    bool clearConnecting = false,
   }) {
     return CanvasLoaded(
       shapes: shapes ?? this.shapes,
+      connectors: connectors ?? this.connectors,
       selectedShapeId: clearSelection
           ? null
           : (selectedShapeId ?? this.selectedShapeId),
+      selectedConnectorId: clearSelection
+          ? null
+          : (selectedConnectorId ?? this.selectedConnectorId),
       isEditingText: clearSelection
           ? false
           : (isEditingText ?? this.isEditingText),
@@ -554,6 +945,18 @@ class CanvasLoaded extends CanvasState {
       currentTool: currentTool ?? this.currentTool,
       currentColor: currentColor ?? this.currentColor,
       snapToGrid: snapToGrid ?? this.snapToGrid,
+      isConnecting: clearConnecting
+          ? false
+          : (isConnecting ?? this.isConnecting),
+      connectingFromShapeId: clearConnecting
+          ? null
+          : (connectingFromShapeId ?? this.connectingFromShapeId),
+      connectingFromAnchor: clearConnecting
+          ? null
+          : (connectingFromAnchor ?? this.connectingFromAnchor),
+      connectingPreviewEnd: clearConnecting
+          ? null
+          : (connectingPreviewEnd ?? this.connectingPreviewEnd),
     );
   }
 
@@ -561,6 +964,21 @@ class CanvasLoaded extends CanvasState {
   CanvasShape? get selectedShape => selectedShapeId != null
       ? shapes.firstWhere((s) => s.id == selectedShapeId)
       : null;
+
+  /// Get the currently selected connector (if any).
+  CanvasConnector? get selectedConnector => selectedConnectorId != null
+      ? connectors.firstWhere((c) => c.id == selectedConnectorId)
+      : null;
+
+  /// Get the shape being connected from (if in connecting mode).
+  CanvasShape? get connectingFromShape => connectingFromShapeId != null
+      ? shapes.firstWhere((s) => s.id == connectingFromShapeId)
+      : null;
+
+  /// Get shapes indexed by ID for quick lookup.
+  Map<String, CanvasShape> get shapesById => {
+    for (final shape in shapes) shape.id: shape,
+  };
 }
 
 class CanvasError extends CanvasState {
@@ -576,13 +994,19 @@ class CanvasPersistError extends CanvasLoaded {
   const CanvasPersistError({
     required this.exception,
     required super.shapes,
+    super.connectors,
     super.selectedShapeId,
+    super.selectedConnectorId,
     super.isEditingText,
     super.panOffset,
     super.zoom,
     super.currentTool,
     super.currentColor,
     super.snapToGrid,
+    super.isConnecting,
+    super.connectingFromShapeId,
+    super.connectingFromAnchor,
+    super.connectingPreviewEnd,
   });
 
   final BaseException exception;

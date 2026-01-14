@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:whiteboard/domain/entities/anchor_point.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/canvas_connector.dart';
+import 'package:whiteboard/presentation/pages/canvas/painters/connectors_painter.dart';
 import 'package:whiteboard/presentation/pages/canvas/painters/cursors_painter.dart';
 
 import 'canvas_vm.dart';
@@ -33,6 +36,7 @@ class WhiteboardCanvas extends ConsumerStatefulWidget {
 class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // Gesture tracking state
   _ShapeInteractionState? _shapeInteractionState;
+  _ConnectorInteractionState? _connectorInteractionState;
   _PanInteractionState? _panInteractionState;
   SystemMouseCursor? _hoverCursor;
 
@@ -60,26 +64,41 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       return const SizedBox.shrink();
     }
 
-    return Stack(
-      children: [
-        Listener(
-          onPointerDown: (event) =>
-              _handlePointerDown(event.localPosition, state),
-          onPointerMove: (event) =>
-              _handlePointerMove(event.localPosition, state),
-          onPointerUp: (event) => _handlePointerUp(event.localPosition, state),
-          onPointerCancel: (event) =>
-              _handlePointerUp(event.localPosition, state),
-          onPointerSignal: (event) => _handlePointerSignal(event, state),
-          child: GestureDetector(
-            // Double-tap to create shape or edit text
-            onDoubleTapDown: (details) =>
-                _handleDoubleTap(details.localPosition, state),
-            child: MouseRegion(
-              cursor: _hoverCursor ?? SystemMouseCursors.basic,
-              onHover: (event) =>
-                  _handlePointerHover(event.localPosition, state),
-              child: CustomPaint(
+    return Listener(
+      onPointerDown: (event) => _handlePointerDown(event.localPosition, state),
+      onPointerMove: (event) => _handlePointerMove(event.localPosition, state),
+      onPointerUp: (event) => _handlePointerUp(event.localPosition, state),
+      onPointerCancel: (event) => _handlePointerUp(event.localPosition, state),
+      onPointerHover: (event) =>
+          _handlePointerHover(event.localPosition, state),
+      onPointerSignal: (event) => _handlePointerSignal(event, state),
+      child: GestureDetector(
+        // Double-tap to create shape or edit text
+        onDoubleTapDown: (details) =>
+            _handleDoubleTap(details.localPosition, state),
+        child: MouseRegion(
+          cursor: _hoverCursor ?? SystemMouseCursors.basic,
+          child: Stack(
+            children: [
+              // Connectors layer (behind shapes)
+              CustomPaint(
+                painter: ConnectorsPainter(
+                  connectors: state.connectors,
+                  shapes: state.shapes,
+                  selectedConnectorId: state.selectedConnectorId,
+                  selectedShapeId: state.selectedShapeId,
+                  isConnecting: state.isConnecting,
+                  connectingFromShape: state.connectingFromShape,
+                  connectingFromAnchor: state.connectingFromAnchor,
+                  connectingPreviewEnd: state.connectingPreviewEnd,
+                  panOffset: state.panOffset,
+                  zoom: state.zoom,
+                ),
+                size: Size.infinite,
+              ),
+
+              // Shapes layer with interaction
+              CustomPaint(
                 painter: WhiteboardPainter(
                   shapes: state.shapes,
                   selectedShapeId: state.selectedShapeId,
@@ -90,23 +109,23 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
                 ),
                 size: Size.infinite,
               ),
-            ),
+
+              if (collaborativeState is CollaborativeCanvasLoaded)
+                CustomPaint(
+                  painter: CursorsPainter(
+                    cursors: collaborativeState.cursors,
+                    panOffset: state.panOffset,
+                    zoom: state.zoom,
+                  ),
+                ),
+
+              // Text editing overlay
+              if (state.isEditingText && state.selectedShape != null)
+                _buildTextEditingOverlay(state, state.selectedShape!),
+            ],
           ),
         ),
-
-        if (collaborativeState is CollaborativeCanvasLoaded)
-          CustomPaint(
-            painter: CursorsPainter(
-              cursors: collaborativeState.cursors,
-              panOffset: state.panOffset,
-              zoom: state.zoom,
-            ),
-          ),
-
-        // Text editing overlay
-        if (state.isEditingText && state.selectedShape != null)
-          _buildTextEditingOverlay(state, state.selectedShape!),
-      ],
+      ),
     );
   }
 
@@ -124,6 +143,47 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       vm.stopTextEdit();
     }
 
+    // If in connecting mode, handle connection completion
+    if (state.isConnecting) {
+      _handleConnectingClick(position, state);
+      return;
+    }
+
+    // Check if clicking on an anchor point of selected shape
+    if (state.selectedShapeId != null) {
+      final anchor = _hitTestAnchor(position, state);
+      if (anchor != null) {
+        vm.startConnecting(state.selectedShapeId!, anchor);
+        return;
+      }
+    }
+
+    // Check if clicking on a connector
+    final connectorId = vm.hitTestConnector(position);
+    if (connectorId != null) {
+      // Check if clicking on a segment for dragging
+      final connector = state.connectors.firstWhere((c) => c.id == connectorId);
+      final segmentIndex = connector.hitTestSegment(position);
+
+      if (segmentIndex >= 0 && state.selectedConnectorId == connectorId) {
+        // Start dragging segment
+        _connectorInteractionState = _ConnectorInteractionState(
+          connectorId: connectorId,
+          segmentIndex: segmentIndex,
+          dragStartPosition: position,
+        );
+        _shapeInteractionState = null;
+        _panInteractionState = null;
+        return;
+      }
+
+      // Just select the connector
+      vm.selectConnector(connectorId);
+      _shapeInteractionState = null;
+      _panInteractionState = null;
+      return;
+    }
+
     // Hit test shapes using ViewModel
     final hitResult = vm.getIntentAtPosition(position);
 
@@ -134,6 +194,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
         dragStartPosition: position,
         initialBounds: hitResult.bounds,
       );
+      _connectorInteractionState = null;
       _panInteractionState = null;
 
       // Select the shape
@@ -143,11 +204,38 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // Clicked on empty space — start panning and deselect
     _shapeInteractionState = null;
+    _connectorInteractionState = null;
     _panInteractionState = _PanInteractionState(
       initialPanOffset: state.panOffset,
       dragStartScreenPosition: screenPosition,
     );
     vm.selectShape(null);
+    vm.selectConnector(null);
+  }
+
+  /// Hit test anchor points on the selected shape.
+  AnchorPoint? _hitTestAnchor(Offset position, CanvasLoaded state) {
+    final selectedShape = state.selectedShape;
+    if (selectedShape == null) return null;
+
+    return selectedShape.hitTestAnchor(position);
+  }
+
+  /// Handle click while in connecting mode.
+  void _handleConnectingClick(Offset position, CanvasLoaded state) {
+    // Check if clicking on an anchor of another shape
+    for (final shape in state.shapes) {
+      if (shape.id == state.connectingFromShapeId) continue;
+
+      final anchor = shape.hitTestAnchor(position);
+      if (anchor != null) {
+        vm.completeConnecting(shape.id, anchor);
+        return;
+      }
+    }
+
+    // Clicked on empty space — create new shape and connect
+    vm.completeConnectingWithNewShape(position);
   }
 
   void _handlePointerSignal(PointerSignalEvent event, CanvasLoaded state) {
@@ -174,12 +262,49 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     collaborativeVm.broadcastCursor(position);
 
+    // Handle connecting mode preview
+    if (state.isConnecting) {
+      vm.updateConnectingPreview(position);
+      return;
+    }
+
     // Handle panning (when dragging on empty space)
     if (_panInteractionState != null) {
       final delta =
           screenPosition - _panInteractionState!.dragStartScreenPosition;
       final newPanOffset = _panInteractionState!.initialPanOffset + delta;
       vm.setPanOffset(newPanOffset);
+      return;
+    }
+
+    // Handle connector segment dragging
+    if (_connectorInteractionState != null) {
+      final delta = position - _connectorInteractionState!.dragStartPosition;
+      final connector = state.connectors.firstWhere(
+        (c) => c.id == _connectorInteractionState!.connectorId,
+      );
+
+      final updatedConnector = connector.withDraggedSegment(
+        _connectorInteractionState!.segmentIndex,
+        delta,
+      );
+
+      // Broadcast the waypoint update
+      final operation = UpdateConnectorWaypointsCanvasOperation(
+        opId: const Uuid().v4(),
+        connectorId: connector.id,
+        waypoints: updatedConnector.entity.waypoints,
+      );
+
+      vm.applyOperation(operation);
+      collaborativeVm.broadcastOperation(operation);
+
+      // Update drag start for continuous dragging
+      _connectorInteractionState = _ConnectorInteractionState(
+        connectorId: _connectorInteractionState!.connectorId,
+        segmentIndex: _connectorInteractionState!.segmentIndex,
+        dragStartPosition: position,
+      );
       return;
     }
 
@@ -206,6 +331,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
   void _handlePointerUp(Offset screenPosition, CanvasLoaded state) {
     _shapeInteractionState = null;
+    _connectorInteractionState = null;
     _panInteractionState = null;
   }
 
@@ -364,4 +490,16 @@ class _PanInteractionState {
 
   final Offset initialPanOffset;
   final Offset dragStartScreenPosition;
+}
+
+class _ConnectorInteractionState {
+  _ConnectorInteractionState({
+    required this.connectorId,
+    required this.segmentIndex,
+    required this.dragStartPosition,
+  });
+
+  final String connectorId;
+  final int segmentIndex;
+  final Offset dragStartPosition;
 }

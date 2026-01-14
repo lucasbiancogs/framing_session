@@ -28,23 +28,11 @@ class CanvasRepositoryImpl implements CanvasRepository {
   StreamController<Operation>? _operationController;
   RealtimeChannel? _broadcastChannel;
 
-  RealtimeChannel getBroadcastChannel(String sessionId) {
-    if (_broadcastChannel != null) {
-      return _broadcastChannel!;
-    }
-
-    _broadcastChannel ??= _client
-        .channel(_CanvasKeys.broadcastChannel(sessionId))
-        .subscribe();
-
-    return _broadcastChannel!;
-  }
-
   @override
   Future<Stream<Cursor>> listenToCursors(String sessionId) async {
     _cursorController ??= StreamController<Cursor>.broadcast();
 
-    getBroadcastChannel(sessionId).onBroadcast(
+    _getBroadcastChannel(sessionId).onBroadcast(
       event: _CanvasKeys.cursorEvent,
       callback: (payload) {
         _cursorController?.add(CursorDto.fromJson(payload).toEntity());
@@ -52,6 +40,7 @@ class CanvasRepositoryImpl implements CanvasRepository {
     );
 
     _cursorController!.onCancel = () {
+      _closeBroadcastChannel();
       _cursorController?.close();
       _cursorController = null;
     };
@@ -71,7 +60,7 @@ class CanvasRepositoryImpl implements CanvasRepository {
   Future<Stream<Operation>> listenToOperations(String sessionId) async {
     _operationController ??= StreamController<Operation>.broadcast();
 
-    getBroadcastChannel(sessionId).onBroadcast(
+    _getBroadcastChannel(sessionId).onBroadcast(
       event: _CanvasKeys.operationEvent,
       callback: (payload) {
         _operationController?.add(OperationDto.fromJson(payload).toEntity());
@@ -79,6 +68,7 @@ class CanvasRepositoryImpl implements CanvasRepository {
     );
 
     _operationController!.onCancel = () {
+      _closeBroadcastChannel();
       _operationController?.close();
       _operationController = null;
     };
@@ -92,5 +82,24 @@ class CanvasRepositoryImpl implements CanvasRepository {
       event: _CanvasKeys.operationEvent,
       payload: OperationDto.fromEntity(operation).toJson(),
     );
+  }
+
+  RealtimeChannel _getBroadcastChannel(String sessionId) {
+    if (_broadcastChannel != null) {
+      return _broadcastChannel!;
+    }
+
+    _broadcastChannel ??= _client
+        .channel(_CanvasKeys.broadcastChannel(sessionId))
+        .subscribe();
+
+    return _broadcastChannel!;
+  }
+
+  void _closeBroadcastChannel() {
+    if (_broadcastChannel == null) return;
+
+    _broadcastChannel?.unsubscribe();
+    _broadcastChannel = null;
   }
 }

@@ -1,5 +1,8 @@
 import 'package:equatable/equatable.dart';
+import 'package:whiteboard/domain/entities/anchor_point.dart';
+import 'package:whiteboard/domain/entities/arrow_type.dart';
 import 'package:whiteboard/domain/entities/shape_type.dart';
+import 'package:whiteboard/domain/entities/waypoint.dart';
 
 sealed class Operation extends Equatable {
   const Operation({required this.opId, required this.shapeId});
@@ -79,4 +82,62 @@ class TextOperation extends Operation {
   });
 
   final String text;
+}
+
+// -------------------------------------------------------------------------
+// Connector Operations
+// -------------------------------------------------------------------------
+
+/// Create a new connector between two shapes.
+class CreateConnectorOperation extends Operation {
+  const CreateConnectorOperation({
+    required super.opId,
+    required super.shapeId, // This is the connector ID
+    required this.sourceShapeId,
+    required this.targetShapeId,
+    required this.sourceAnchor,
+    required this.targetAnchor,
+    required this.arrowType,
+    required this.color,
+  });
+
+  final String sourceShapeId;
+  final String targetShapeId;
+  final AnchorPoint sourceAnchor;
+  final AnchorPoint targetAnchor;
+  final ArrowType arrowType;
+  final String color;
+
+  @override
+  List<Object?> get props => [
+    ...super.props,
+    sourceShapeId,
+    targetShapeId,
+    sourceAnchor,
+    targetAnchor,
+    arrowType,
+    color,
+  ];
+}
+
+/// Update connector waypoints (during segment dragging).
+class UpdateConnectorWaypointsOperation extends Operation {
+  const UpdateConnectorWaypointsOperation({
+    required super.opId,
+    required super.shapeId, // This is the connector ID
+    required this.waypoints,
+  });
+
+  final List<Waypoint> waypoints;
+
+  @override
+  List<Object?> get props => [...super.props, waypoints];
+}
+
+/// Delete a connector.
+class DeleteConnectorOperation extends Operation {
+  const DeleteConnectorOperation({
+    required super.opId,
+    required super.shapeId, // This is the connector ID
+  });
 }
