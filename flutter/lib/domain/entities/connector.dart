@@ -21,8 +21,6 @@ class Connector extends Equatable {
     required this.arrowType,
     required this.color,
     required this.waypoints,
-    this.createdAt,
-    this.updatedAt,
   });
 
   final String id;
@@ -34,8 +32,6 @@ class Connector extends Equatable {
   final ArrowType arrowType;
   final String color;
   final List<Waypoint> waypoints;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
 
   @override
   List<Object?> get props => [
@@ -48,7 +44,5 @@ class Connector extends Equatable {
     arrowType,
     color,
     waypoints,
-    createdAt,
-    updatedAt,
   ];
 }

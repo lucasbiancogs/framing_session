@@ -10,6 +10,7 @@ import 'package:whiteboard/domain/entities/connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/connector_router.dart';
 
 import '../../../core/errors/base_faults.dart';
 import '../../../core/utils/debouncer.dart';
@@ -61,6 +62,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
     super.dispose();
   }
 
+  /// The router used for connector path calculations.
+  final ConnectorRouter _router = const LinearConnectorRouter();
+
   Future<void> _loadShapes() async {
     final shapesResult = await _shapeServices.getSessionShapes(_sessionId);
     final connectorsResult = await _shapeServices.getSessionConnectors(
@@ -80,13 +84,17 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
         // Create canvas connectors, filtering out any with missing shapes
         final canvasConnectors = connectors
-            .map(
-              (c) => CanvasConnector.fromEntity(
-                c,
-                shapesById[c.sourceShapeId]!,
-                shapesById[c.targetShapeId]!,
-              ),
-            )
+            .map((c) {
+              final sourceShape = shapesById[c.sourceShapeId];
+              final targetShape = shapesById[c.targetShapeId];
+              if (sourceShape == null || targetShape == null) return null;
+
+              return _buildCanvasConnector(
+                entity: c,
+                sourceShape: sourceShape,
+                targetShape: targetShape,
+              );
+            })
             .whereType<CanvasConnector>()
             .toList();
 
@@ -96,6 +104,28 @@ class CanvasVM extends StateNotifier<CanvasState> {
         );
       });
     });
+  }
+
+  /// Build a CanvasConnector from entity and shapes using the router.
+  ///
+  /// This is the single point where connectors are created, ensuring
+  /// consistent use of the router for node and path calculation.
+  CanvasConnector _buildCanvasConnector({
+    required Connector entity,
+    required CanvasShape sourceShape,
+    required CanvasShape targetShape,
+  }) {
+    final nodes = _router.createInitialNodes(
+      sourcePosition: sourceShape.getAnchorPosition(entity.sourceAnchor),
+      targetPosition: targetShape.getAnchorPosition(entity.targetAnchor),
+      sourceAnchor: entity.sourceAnchor,
+      targetAnchor: entity.targetAnchor,
+      waypoints: entity.waypoints,
+    );
+
+    final path = _router.route(nodes);
+
+    return CanvasConnector(entity: entity, nodes: nodes, path: path);
   }
 
   Future<void> retryLoading() async {
@@ -636,11 +666,18 @@ class CanvasVM extends StateNotifier<CanvasState> {
   }
 
   /// Hit test connectors at a canvas position.
+  ///
+  /// Returns the connector ID if a node or segment is hit.
   String? hitTestConnector(Offset canvasPosition) {
     if (state is! CanvasLoaded) return null;
 
     for (final connector in _loadedState.connectors.reversed) {
-      if (connector.hitTestSegment(canvasPosition) >= 0) {
+      // Check if hitting a node (waypoint or anchor)
+      if (connector.hitTestNode(canvasPosition) != null) {
+        return connector.id;
+      }
+      // Check if hitting a path segment
+      if (connector.hitTestSegment(canvasPosition) != null) {
         return connector.id;
       }
     }
@@ -660,7 +697,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   /// Rebuild connectors after shapes have moved.
   ///
-  /// This updates the connector references to point to the updated shapes.
+  /// This updates the connector anchor positions and recalculates routes
+  /// using the router.
   void _rebuildConnectors() {
     if (state is! CanvasLoaded) return;
 
@@ -675,12 +713,11 @@ class CanvasVM extends StateNotifier<CanvasState> {
             return null;
           }
 
-          // Use fromEntity to ensure start/end waypoints are recalculated
-          // when shapes move
-          return CanvasConnector.fromEntity(
-            connector.entity,
-            sourceShape,
-            targetShape,
+          // Rebuild connector with updated anchor positions
+          return _buildCanvasConnector(
+            entity: connector.entity,
+            sourceShape: sourceShape,
+            targetShape: targetShape,
           );
         })
         .whereType<CanvasConnector>()
@@ -728,10 +765,10 @@ class CanvasVM extends StateNotifier<CanvasState> {
       color: operation.color,
     );
 
-    final canvasConnector = CanvasConnector.fromEntity(
-      connector,
-      sourceShape,
-      targetShape,
+    final canvasConnector = _buildCanvasConnector(
+      entity: connector,
+      sourceShape: sourceShape,
+      targetShape: targetShape,
     );
 
     state = _loadedState.copyWith(
@@ -747,8 +784,15 @@ class CanvasVM extends StateNotifier<CanvasState> {
   ) {
     if (state is! CanvasLoaded) return;
 
+    final shapesById = _loadedState.shapesById;
+
     final updatedConnectors = _loadedState.connectors.map((connector) {
       if (connector.id != operation.connectorId) return connector;
+
+      final sourceShape = shapesById[connector.entity.sourceShapeId];
+      final targetShape = shapesById[connector.entity.targetShapeId];
+
+      if (sourceShape == null || targetShape == null) return connector;
 
       final updatedEntity = Connector(
         id: connector.entity.id,
@@ -760,15 +804,13 @@ class CanvasVM extends StateNotifier<CanvasState> {
         arrowType: connector.entity.arrowType,
         color: connector.entity.color,
         waypoints: operation.waypoints,
-        createdAt: connector.entity.createdAt,
-        updatedAt: connector.entity.updatedAt,
       );
 
-      // Use fromEntity to ensure start/end waypoints are included
-      return CanvasConnector.fromEntity(
-        updatedEntity,
-        connector.sourceShape,
-        connector.targetShape,
+      // Rebuild connector with new waypoints
+      return _buildCanvasConnector(
+        entity: updatedEntity,
+        sourceShape: sourceShape,
+        targetShape: targetShape,
       );
     }).toList();
 

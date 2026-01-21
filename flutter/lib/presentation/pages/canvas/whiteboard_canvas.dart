@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:whiteboard/domain/entities/anchor_point.dart';
+import 'package:whiteboard/domain/entities/waypoint.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_connector.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/connector_node.dart';
 import 'package:whiteboard/presentation/pages/canvas/painters/connectors_painter.dart';
 import 'package:whiteboard/presentation/pages/canvas/painters/cursors_painter.dart';
 
@@ -158,32 +160,6 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       }
     }
 
-    // Check if clicking on a connector
-    final connectorId = vm.hitTestConnector(position);
-    if (connectorId != null) {
-      // Check if clicking on a segment for dragging
-      final connector = state.connectors.firstWhere((c) => c.id == connectorId);
-      final segmentIndex = connector.hitTestSegment(position);
-
-      if (segmentIndex >= 0 && state.selectedConnectorId == connectorId) {
-        // Start dragging segment
-        _connectorInteractionState = _ConnectorInteractionState(
-          connectorId: connectorId,
-          segmentIndex: segmentIndex,
-          dragStartPosition: position,
-        );
-        _shapeInteractionState = null;
-        _panInteractionState = null;
-        return;
-      }
-
-      // Just select the connector
-      vm.selectConnector(connectorId);
-      _shapeInteractionState = null;
-      _panInteractionState = null;
-      return;
-    }
-
     // Hit test shapes using ViewModel
     final hitResult = vm.getIntentAtPosition(position);
 
@@ -277,36 +253,22 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       return;
     }
 
-    // Handle connector segment dragging
-    if (_connectorInteractionState != null) {
-      final delta = position - _connectorInteractionState!.dragStartPosition;
-      final connector = state.connectors.firstWhere(
-        (c) => c.id == _connectorInteractionState!.connectorId,
-      );
+    // Handle connector interaction
+    // if (_connectorInteractionState != null) {
+    //   final connector = state.connectors.firstWhere(
+    //     (c) => c.id == _connectorInteractionState!.connectorId,
+    //   );
 
-      final updatedConnector = connector.withDraggedSegment(
-        _connectorInteractionState!.segmentIndex,
-        delta,
-      );
-
-      // Broadcast the waypoint update
-      final operation = UpdateConnectorWaypointsCanvasOperation(
-        opId: const Uuid().v4(),
-        connectorId: connector.id,
-        waypoints: updatedConnector.entity.waypoints,
-      );
-
-      vm.applyOperation(operation);
-      collaborativeVm.broadcastOperation(operation);
-
-      // Update drag start for continuous dragging
-      _connectorInteractionState = _ConnectorInteractionState(
-        connectorId: _connectorInteractionState!.connectorId,
-        segmentIndex: _connectorInteractionState!.segmentIndex,
-        dragStartPosition: position,
-      );
-      return;
-    }
+    //   switch (_connectorInteractionState!.type) {
+    //     case _ConnectorInteractionType.waypoint:
+    //       _handleWaypointDrag(position, connector);
+    //     case _ConnectorInteractionType.anchor:
+    //       _handleAnchorDrag(position, connector, state);
+    //     case _ConnectorInteractionType.segment:
+    //       _handleSegmentDrag(position, connector);
+    //   }
+    //   return;
+    // }
 
     // Handle shape interaction
     if (_shapeInteractionState == null) {
@@ -328,6 +290,117 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       collaborativeVm.broadcastOperation(operation);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Connector Drag Handlers
+  // ---------------------------------------------------------------------------
+
+  /// Threshold distance to convert anchor drag to waypoint creation.
+  static const double _anchorDragThreshold = 10.0;
+
+  /// Handle waypoint dragging - moves the waypoint directly.
+  // void _handleWaypointDrag(Offset position, CanvasConnector connector) {
+  //   final waypointIndex = _connectorInteractionState!.waypointIndex!;
+
+  //   // Broadcast the waypoint update
+  //   final operation = UpdateConnectorWaypointsCanvasOperation(
+  //     opId: const Uuid().v4(),
+  //     connectorId: connector.id,
+  //     waypoints: _buildWaypointsWithMoved(connector, waypointIndex, position),
+  //   );
+
+  //   vm.applyOperation(operation);
+  //   collaborativeVm.broadcastOperation(operation);
+  // }
+
+  /// Handle anchor dragging - creates waypoint after threshold.
+  // void _handleAnchorDrag(
+  //   Offset position,
+  //   CanvasConnector connector,
+  //   CanvasLoaded state,
+  // ) {
+  //   final dragStart = _connectorInteractionState!.dragStartPosition;
+  //   final distance = (position - dragStart).distance;
+
+  //   // Check if threshold exceeded
+  //   if (distance >= _anchorDragThreshold) {
+  //     // Create a new waypoint and switch to waypoint dragging
+  //     final isSource = _connectorInteractionState!.isSourceAnchor!;
+  //     final obstacles = state.shapes.map((s) => s.bounds).toList();
+
+  //     final result = connector.withWaypointFromAnchorDrag(
+  //       fromSource: isSource,
+  //       position: position,
+  //       obstacles: obstacles,
+  //     );
+
+  //     // Broadcast the new waypoints
+  //     final operation = UpdateConnectorWaypointsCanvasOperation(
+  //       opId: const Uuid().v4(),
+  //       connectorId: connector.id,
+  //       waypoints: result.connector.entity.waypoints,
+  //     );
+
+  //     vm.applyOperation(operation);
+  //     collaborativeVm.broadcastOperation(operation);
+
+  //     // Switch to waypoint dragging mode
+  //     _connectorInteractionState = _ConnectorInteractionState.waypoint(
+  //       connectorId: connector.id,
+  //       dragStartPosition: position,
+  //       waypointIndex: result.waypointIndex,
+  //     );
+  //   }
+  //   // If threshold not exceeded, do nothing (anchor stays in place)
+  // }
+
+  /// Handle segment dragging - moves both endpoints perpendicular.
+  // void _handleSegmentDrag(Offset position, CanvasConnector connector) {
+  //   final delta = position - _connectorInteractionState!.dragStartPosition;
+  //   final segmentIndex = _connectorInteractionState!.segmentIndex!;
+
+  //   final updatedConnector = connector.withDraggedSegment(segmentIndex, delta);
+
+  //   // Broadcast the waypoint update
+  //   final operation = UpdateConnectorWaypointsCanvasOperation(
+  //     opId: const Uuid().v4(),
+  //     connectorId: connector.id,
+  //     waypoints: updatedConnector.entity.waypoints,
+  //   );
+
+  //   vm.applyOperation(operation);
+  //   collaborativeVm.broadcastOperation(operation);
+
+  //   // Update drag start for continuous dragging
+  //   _connectorInteractionState = _ConnectorInteractionState.segment(
+  //     connectorId: connector.id,
+  //     dragStartPosition: position,
+  //     segmentIndex: segmentIndex,
+  //   );
+  // }
+
+  /// Build waypoints list with one waypoint moved.
+  // List<Waypoint> _buildWaypointsWithMoved(
+  //   CanvasConnector connector,
+  //   int waypointIndex,
+  //   Offset newPosition,
+  // ) {
+  //   final waypoints = <Waypoint>[];
+  //   final nodes = connector.nodes;
+
+  //   // Iterate waypoint nodes (skip anchors at index 0 and last)
+  //   for (int i = 1; i < nodes.length - 1; i++) {
+  //     final wpIndex = i - 1; // Convert node index to waypoint index
+  //     if (wpIndex == waypointIndex) {
+  //       waypoints.add(Waypoint(index: i, x: newPosition.dx, y: newPosition.dy));
+  //     } else {
+  //       final node = nodes[i] as WaypointNode;
+  //       waypoints.add(Waypoint(index: i, x: node.x, y: node.y));
+  //     }
+  //   }
+
+  //   return waypoints;
+  // }
 
   void _handlePointerUp(Offset screenPosition, CanvasLoaded state) {
     _shapeInteractionState = null;
@@ -492,14 +565,46 @@ class _PanInteractionState {
   final Offset dragStartScreenPosition;
 }
 
-class _ConnectorInteractionState {
-  _ConnectorInteractionState({
-    required this.connectorId,
-    required this.segmentIndex,
-    required this.dragStartPosition,
-  });
+/// Type of connector interaction.
+enum _ConnectorInteractionType { segment, waypoint, anchor }
 
+class _ConnectorInteractionState {
+  _ConnectorInteractionState.segment({
+    required this.connectorId,
+    required this.dragStartPosition,
+    required this.segmentIndex,
+  }) : type = _ConnectorInteractionType.segment,
+       waypointIndex = null,
+       isSourceAnchor = null;
+
+  _ConnectorInteractionState.waypoint({
+    required this.connectorId,
+    required this.dragStartPosition,
+    required this.waypointIndex,
+  }) : type = _ConnectorInteractionType.waypoint,
+       segmentIndex = null,
+       isSourceAnchor = null;
+
+  _ConnectorInteractionState.anchor({
+    required this.connectorId,
+    required this.dragStartPosition,
+    required bool isSource,
+  }) : type = _ConnectorInteractionType.anchor,
+       isSourceAnchor = isSource,
+       segmentIndex = null,
+       waypointIndex = null;
+
+  final _ConnectorInteractionType type;
   final String connectorId;
-  final int segmentIndex;
   final Offset dragStartPosition;
+
+  /// For segment dragging - which segment is being dragged.
+  final int? segmentIndex;
+
+  /// For waypoint dragging - which waypoint is being dragged.
+  final int? waypointIndex;
+
+  /// For anchor dragging - true for source, false for target.
+  /// Once threshold is exceeded, this converts to waypoint dragging.
+  final bool? isSourceAnchor;
 }

@@ -1,58 +1,22 @@
 import 'package:whiteboard/domain/entities/session.dart';
 
 class SessionDto {
-  const SessionDto({
-    required this.id,
-    required this.name,
-    this.createdAt,
-    this.updatedAt,
-  });
+  const SessionDto({required this.id, required this.name});
 
   final String id;
   final String name;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
 
   /// Create from database map (Supabase response)
-  factory SessionDto.fromJson(Map<String, dynamic> json) {
-    return SessionDto(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : null,
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : null,
-    );
-  }
+  factory SessionDto.fromJson(Map<String, dynamic> json) =>
+      SessionDto(id: json['id'] as String, name: json['name'] as String);
 
   /// Convert to database map (for INSERT/UPDATE)
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      // created_at and updated_at are set by database defaults
-    };
-  }
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
 
   /// Convert to domain entity
-  Session toEntity() {
-    return Session(
-      id: id,
-      name: name,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-    );
-  }
+  Session toEntity() => Session(id: id, name: name);
 
   /// Create from domain entity
-  factory SessionDto.fromEntity(Session entity) {
-    return SessionDto(
-      id: entity.id,
-      name: entity.name,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
-    );
-  }
+  factory SessionDto.fromEntity(Session entity) =>
+      SessionDto(id: entity.id, name: entity.name);
 }

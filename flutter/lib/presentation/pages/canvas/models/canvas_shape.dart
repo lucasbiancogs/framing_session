@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:whiteboard/domain/entities/anchor_point.dart';
 import 'package:whiteboard/presentation/helpers/color_helper.dart'
     as color_helper;
 
@@ -6,6 +7,9 @@ import '../../../../domain/entities/shape.dart' as domain;
 import '../../../../domain/entities/shape_type.dart';
 import 'edit_intent.dart';
 import 'canvas_operation.dart';
+
+/// Offset applied to anchor positions from shape bounds.
+const double anchorOffset = 15.0;
 
 /// Abstract base class for canvas shapes.
 ///
@@ -220,6 +224,44 @@ abstract class CanvasShape {
 
   Color get textColor =>
       color.computeLuminance() > 0.4 ? Colors.black : Colors.white;
+
+  // ---------------------------------------------------------------------------
+  // Anchor Points (for connectors)
+  // ---------------------------------------------------------------------------
+
+  /// Get the position of an anchor point on this shape.
+  Offset getAnchorPosition(AnchorPoint anchor) {
+    return switch (anchor) {
+      AnchorPoint.top => Offset(bounds.center.dx, bounds.top - anchorOffset),
+      AnchorPoint.right => Offset(
+        bounds.right + anchorOffset,
+        bounds.center.dy,
+      ),
+      AnchorPoint.bottom => Offset(
+        bounds.center.dx,
+        bounds.bottom + anchorOffset,
+      ),
+      AnchorPoint.left => Offset(bounds.left - anchorOffset, bounds.center.dy),
+    };
+  }
+
+  /// Get all anchor positions as a map.
+  Map<AnchorPoint, Offset> get anchorPositions => {
+    AnchorPoint.top: getAnchorPosition(AnchorPoint.top),
+    AnchorPoint.right: getAnchorPosition(AnchorPoint.right),
+    AnchorPoint.bottom: getAnchorPosition(AnchorPoint.bottom),
+    AnchorPoint.left: getAnchorPosition(AnchorPoint.left),
+  };
+
+  /// Hit test anchor points, returns the anchor if hit, null otherwise.
+  AnchorPoint? hitTestAnchor(Offset point, {double tolerance = 12.0}) {
+    for (final entry in anchorPositions.entries) {
+      if ((point - entry.value).distance <= tolerance) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
 }
 
 /// Rectangle shape implementation.
@@ -250,8 +292,6 @@ class RectangleCanvasShape extends CanvasShape {
       color: color ?? entity.color,
       rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
     ),
   );
 
@@ -379,8 +419,6 @@ class CircleCanvasShape extends CanvasShape {
       color: color ?? entity.color,
       rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
     ),
   );
 
@@ -505,8 +543,6 @@ class TriangleCanvasShape extends CanvasShape {
       color: color ?? entity.color,
       rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
     ),
   );
 
@@ -647,8 +683,6 @@ class TextCanvasShape extends CanvasShape {
       color: color ?? entity.color,
       rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
     ),
   );
 

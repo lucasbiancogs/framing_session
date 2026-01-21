@@ -22,15 +22,14 @@ class ConnectorDto {
   final String sessionId;
   final String sourceShapeId;
   final String targetShapeId;
-  final AnchorPointDto sourceAnchor; // Raw string from database
-  final AnchorPointDto targetAnchor; // Raw string from database
-  final ArrowTypeDto arrowType; // Raw string from database enum
+  final AnchorPointDto sourceAnchor;
+  final AnchorPointDto targetAnchor;
+  final ArrowTypeDto arrowType;
   final String color;
-  final List<WaypointDto> waypoints; // Raw JSON from database
+  final List<WaypointDto> waypoints;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
-  /// Create from database map (Supabase response)
   factory ConnectorDto.fromJson(Map<String, dynamic> json) => ConnectorDto(
     id: json['id'] as String,
     sessionId: json['session_id'] as String,
@@ -51,7 +50,6 @@ class ConnectorDto {
         : null,
   );
 
-  /// Convert to database map (for INSERT/UPDATE)
   Map<String, dynamic> toJson() => {
     'id': id,
     'session_id': sessionId,
@@ -62,42 +60,33 @@ class ConnectorDto {
     'arrow_type': arrowType.raw,
     'color': color,
     'waypoints': waypoints,
-    // created_at and updated_at are set by database defaults
   };
 
   /// Convert to domain entity
-  Connector toEntity() {
-    return Connector(
-      id: id,
-      sessionId: sessionId,
-      sourceShapeId: sourceShapeId,
-      targetShapeId: targetShapeId,
-      sourceAnchor: sourceAnchor.toEntity(),
-      targetAnchor: targetAnchor.toEntity(),
-      arrowType: arrowType.toEntity(),
-      color: color,
-      waypoints: waypoints.map((wp) => wp.toEntity()).toList(),
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-    );
-  }
+  Connector toEntity() => Connector(
+    id: id,
+    sessionId: sessionId,
+    sourceShapeId: sourceShapeId,
+    targetShapeId: targetShapeId,
+    sourceAnchor: sourceAnchor.toEntity(),
+    targetAnchor: targetAnchor.toEntity(),
+    arrowType: arrowType.toEntity(),
+    color: color,
+    waypoints: waypoints.map((wp) => wp.toEntity()).toList(),
+  );
 
   /// Create from domain entity
-  factory ConnectorDto.fromEntity(Connector entity) {
-    return ConnectorDto(
-      id: entity.id,
-      sessionId: entity.sessionId,
-      sourceShapeId: entity.sourceShapeId,
-      targetShapeId: entity.targetShapeId,
-      sourceAnchor: AnchorPointDto.fromString(entity.sourceAnchor.name),
-      targetAnchor: AnchorPointDto.fromString(entity.targetAnchor.name),
-      arrowType: ArrowTypeDto.fromString(entity.arrowType.name),
-      color: entity.color,
-      waypoints: entity.waypoints
-          .map((wp) => WaypointDto.fromEntity(wp))
-          .toList(),
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
-    );
-  }
+  factory ConnectorDto.fromEntity(Connector entity) => ConnectorDto(
+    id: entity.id,
+    sessionId: entity.sessionId,
+    sourceShapeId: entity.sourceShapeId,
+    targetShapeId: entity.targetShapeId,
+    sourceAnchor: AnchorPointDto.fromString(entity.sourceAnchor.name),
+    targetAnchor: AnchorPointDto.fromString(entity.targetAnchor.name),
+    arrowType: ArrowTypeDto.fromString(entity.arrowType.name),
+    color: entity.color,
+    waypoints: entity.waypoints
+        .map((wp) => WaypointDto.fromEntity(wp))
+        .toList(),
+  );
 }

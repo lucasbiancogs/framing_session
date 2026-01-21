@@ -20,8 +20,6 @@ class Shape extends Equatable {
     required this.color,
     required this.rotation,
     this.text,
-    this.createdAt,
-    this.updatedAt,
   });
 
   final String id;
@@ -34,8 +32,6 @@ class Shape extends Equatable {
   final String color;
   final double rotation;
   final String? text;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
 
   @override
   List<Object?> get props => [
@@ -49,7 +45,5 @@ class Shape extends Equatable {
     color,
     rotation,
     text,
-    createdAt,
-    updatedAt,
   ];
 }
