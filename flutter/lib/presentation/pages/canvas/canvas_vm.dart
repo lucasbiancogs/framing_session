@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import 'package:whiteboard/domain/entities/anchor_point.dart';
 import 'package:whiteboard/domain/entities/arrow_type.dart';
 import 'package:whiteboard/domain/entities/connector.dart';
+import 'package:whiteboard/domain/entities/waypoint.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
@@ -764,6 +765,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   /// This runs the router's optimization logic:
   /// - Converts SegmentMidNode to WaypointNode
   /// - Creates new SegmentMidNodes on adjacent segments
+  /// - Persists waypoints to database
   /// - In the future: collapses unnecessary nodes
   void finalizeConnectorNodeMove(String connectorId, int nodeIndex) {
     if (state is! CanvasLoaded) return;
@@ -783,11 +785,28 @@ class CanvasVM extends StateNotifier<CanvasState> {
       node.position,
     );
 
+    // Extract waypoints from nodes (only WaypointNodes, not SegmentMidNodes)
+    final waypoints = _extractWaypointsFromNodes(optimizedNodes);
+
+    // Update entity with new waypoints
+    final updatedEntity = Connector(
+      id: connector.entity.id,
+      sessionId: connector.entity.sessionId,
+      sourceShapeId: connector.entity.sourceShapeId,
+      targetShapeId: connector.entity.targetShapeId,
+      sourceAnchor: connector.entity.sourceAnchor,
+      targetAnchor: connector.entity.targetAnchor,
+      arrowType: connector.entity.arrowType,
+      color: connector.entity.color,
+      waypoints: waypoints,
+    );
+
     // Recalculate path
     final newPath = _router.route(optimizedNodes);
 
-    // Update connector
-    final updatedConnector = connector.copyWith(
+    // Update connector with new entity and nodes
+    final updatedConnector = CanvasConnector(
+      entity: updatedEntity,
       nodes: optimizedNodes,
       path: newPath,
     );
@@ -798,6 +817,30 @@ class CanvasVM extends StateNotifier<CanvasState> {
     updatedConnectors[connectorIndex] = updatedConnector;
 
     state = _loadedState.copyWith(connectors: updatedConnectors);
+
+    // Persist to database
+    _shapeServices.updateConnector(updatedEntity);
+  }
+
+  /// Extract waypoints from nodes (only WaypointNodes, indexed by position).
+  List<Waypoint> _extractWaypointsFromNodes(List<ConnectorNode> nodes) {
+    final waypoints = <Waypoint>[];
+    int waypointIndex = 0;
+
+    for (final node in nodes) {
+      if (node is WaypointNode) {
+        waypoints.add(
+          Waypoint(
+            index: waypointIndex,
+            x: node.position.dx,
+            y: node.position.dy,
+          ),
+        );
+        waypointIndex++;
+      }
+    }
+
+    return waypoints;
   }
 
   /// Hit test anchor points on the selected shape.
