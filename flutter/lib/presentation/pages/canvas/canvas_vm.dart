@@ -10,6 +10,7 @@ import 'package:whiteboard/domain/entities/connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/canvas_page.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_connector.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/canvas_shape.dart';
+import 'package:whiteboard/presentation/pages/canvas/models/connector_node.dart';
 import 'package:whiteboard/presentation/pages/canvas/models/connector_router.dart';
 
 import '../../../core/errors/base_faults.dart';
@@ -536,9 +537,10 @@ class CanvasVM extends StateNotifier<CanvasState> {
     if (state is! CanvasLoaded) return;
 
     state = _loadedState.copyWith(
-      isConnecting: true,
-      connectingFromShapeId: shapeId,
-      connectingFromAnchor: anchor,
+      connectingMode: ConnectingModeState(
+        fromShapeId: shapeId,
+        fromAnchor: anchor,
+      ),
       selectedShapeId: shapeId,
     );
   }
@@ -547,7 +549,11 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void updateConnectingPreview(Offset position) {
     if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
 
-    state = _loadedState.copyWith(connectingPreviewEnd: position);
+    state = _loadedState.copyWith(
+      connectingMode: _loadedState.connectingMode!.copyWith(
+        previewEnd: position,
+      ),
+    );
   }
 
   /// Cancel connecting mode.
@@ -683,6 +689,115 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }
 
     return null;
+  }
+
+  /// Hit test a specific connector's nodes.
+  ///
+  /// Returns the node index if hit, null otherwise.
+  int? hitTestConnectorNode(String connectorId, Offset canvasPosition) {
+    if (state is! CanvasLoaded) return null;
+
+    final connector = _loadedState.connectors.firstWhere(
+      (c) => c.id == connectorId,
+      orElse: () => throw StateError('Connector not found: $connectorId'),
+    );
+
+    final node = connector.hitTestNode(canvasPosition);
+    if (node == null) return null;
+
+    return connector.nodes.indexOf(node);
+  }
+
+  /// Move a connector node to a new position (during drag).
+  ///
+  /// This only updates the node position without optimization.
+  /// Call [finalizeConnectorNodeMove] on release to optimize nodes.
+  void moveConnectorNode(
+    String connectorId,
+    int nodeIndex,
+    Offset newPosition,
+  ) {
+    if (state is! CanvasLoaded) return;
+
+    final connectorIndex = _loadedState.connectors.indexWhere(
+      (c) => c.id == connectorId,
+    );
+    if (connectorIndex == -1) return;
+
+    final connector = _loadedState.connectors[connectorIndex];
+
+    // Just update the node position (no optimization during drag)
+    final newNodes = List<ConnectorNode>.from(connector.nodes);
+    final node = newNodes[nodeIndex];
+
+    // Update position based on node type
+    if (node is WaypointNode) {
+      newNodes[nodeIndex] = WaypointNode(position: newPosition);
+    } else if (node is SegmentMidNode) {
+      // During drag, keep it as SegmentMidNode (will be converted on finalize)
+      newNodes[nodeIndex] = SegmentMidNode(position: newPosition);
+    }
+
+    // Build path: skip SegmentMidNodes EXCEPT the one being dragged
+    final newPath = <Offset>[];
+    for (int i = 0; i < newNodes.length; i++) {
+      final n = newNodes[i];
+      // Include: anchors, waypoints, and the specific node being dragged
+      if (n is! SegmentMidNode || i == nodeIndex) {
+        newPath.add(n.position);
+      }
+    }
+
+    // Update connector
+    final updatedConnector = connector.copyWith(nodes: newNodes, path: newPath);
+
+    final updatedConnectors = List<CanvasConnector>.from(
+      _loadedState.connectors,
+    );
+    updatedConnectors[connectorIndex] = updatedConnector;
+
+    state = _loadedState.copyWith(connectors: updatedConnectors);
+  }
+
+  /// Finalize connector node movement (on release).
+  ///
+  /// This runs the router's optimization logic:
+  /// - Converts SegmentMidNode to WaypointNode
+  /// - Creates new SegmentMidNodes on adjacent segments
+  /// - In the future: collapses unnecessary nodes
+  void finalizeConnectorNodeMove(String connectorId, int nodeIndex) {
+    if (state is! CanvasLoaded) return;
+
+    final connectorIndex = _loadedState.connectors.indexWhere(
+      (c) => c.id == connectorId,
+    );
+    if (connectorIndex == -1) return;
+
+    final connector = _loadedState.connectors[connectorIndex];
+    final node = connector.nodes[nodeIndex];
+
+    // Use router to optimize nodes (convert mid → waypoint, add new mids, etc.)
+    final optimizedNodes = _router.onMovedWaypoint(
+      connector.nodes,
+      nodeIndex,
+      node.position,
+    );
+
+    // Recalculate path
+    final newPath = _router.route(optimizedNodes);
+
+    // Update connector
+    final updatedConnector = connector.copyWith(
+      nodes: optimizedNodes,
+      path: newPath,
+    );
+
+    final updatedConnectors = List<CanvasConnector>.from(
+      _loadedState.connectors,
+    );
+    updatedConnectors[connectorIndex] = updatedConnector;
+
+    state = _loadedState.copyWith(connectors: updatedConnectors);
   }
 
   /// Hit test anchor points on the selected shape.
@@ -849,6 +964,38 @@ class CanvasLoading extends CanvasState {
   const CanvasLoading();
 }
 
+/// Metadata for connector creation mode.
+///
+/// Groups all state related to drawing a new connector between shapes.
+@immutable
+class ConnectingModeState extends Equatable {
+  const ConnectingModeState({
+    required this.fromShapeId,
+    required this.fromAnchor,
+    this.previewEnd,
+  });
+
+  /// The shape ID being connected from.
+  final String fromShapeId;
+
+  /// The anchor point being connected from.
+  final AnchorPoint fromAnchor;
+
+  /// The current cursor position for preview line.
+  final Offset? previewEnd;
+
+  @override
+  List<Object?> get props => [fromShapeId, fromAnchor, previewEnd];
+
+  ConnectingModeState copyWith({Offset? previewEnd}) {
+    return ConnectingModeState(
+      fromShapeId: fromShapeId,
+      fromAnchor: fromAnchor,
+      previewEnd: previewEnd ?? this.previewEnd,
+    );
+  }
+}
+
 class CanvasLoaded extends CanvasState {
   const CanvasLoaded({
     required this.shapes,
@@ -861,11 +1008,7 @@ class CanvasLoaded extends CanvasState {
     this.currentTool = CanvasTool.select,
     this.currentColor = '#4ED09A',
     this.snapToGrid = false,
-    // Connecting mode state
-    this.isConnecting = false,
-    this.connectingFromShapeId,
-    this.connectingFromAnchor,
-    this.connectingPreviewEnd,
+    this.connectingMode,
   });
 
   /// All shapes in the session.
@@ -900,19 +1043,22 @@ class CanvasLoaded extends CanvasState {
   /// Whether snap-to-grid is enabled.
   final bool snapToGrid;
 
-  // --- Connecting mode state ---
+  /// Connector creation mode state (null when not connecting).
+  final ConnectingModeState? connectingMode;
+
+  // --- Convenience getters for connecting mode ---
 
   /// Whether the user is currently creating a connector.
-  final bool isConnecting;
+  bool get isConnecting => connectingMode != null;
 
-  /// The shape ID being connected from.
-  final String? connectingFromShapeId;
+  /// The shape ID being connected from (if in connecting mode).
+  String? get connectingFromShapeId => connectingMode?.fromShapeId;
 
-  /// The anchor point being connected from.
-  final AnchorPoint? connectingFromAnchor;
+  /// The anchor point being connected from (if in connecting mode).
+  AnchorPoint? get connectingFromAnchor => connectingMode?.fromAnchor;
 
-  /// The current cursor position for preview line.
-  final Offset? connectingPreviewEnd;
+  /// The current cursor position for preview line (if in connecting mode).
+  Offset? get connectingPreviewEnd => connectingMode?.previewEnd;
 
   @override
   List<Object?> get props => [
@@ -926,10 +1072,7 @@ class CanvasLoaded extends CanvasState {
     currentTool,
     currentColor,
     snapToGrid,
-    isConnecting,
-    connectingFromShapeId,
-    connectingFromAnchor,
-    connectingPreviewEnd,
+    connectingMode,
   ];
 
   CanvasPersistError toPersistError(BaseException exception) {
@@ -945,10 +1088,7 @@ class CanvasLoaded extends CanvasState {
       currentTool: currentTool,
       currentColor: currentColor,
       snapToGrid: snapToGrid,
-      isConnecting: isConnecting,
-      connectingFromShapeId: connectingFromShapeId,
-      connectingFromAnchor: connectingFromAnchor,
-      connectingPreviewEnd: connectingPreviewEnd,
+      connectingMode: connectingMode,
     );
   }
 
@@ -963,10 +1103,7 @@ class CanvasLoaded extends CanvasState {
     CanvasTool? currentTool,
     String? currentColor,
     bool? snapToGrid,
-    bool? isConnecting,
-    String? connectingFromShapeId,
-    AnchorPoint? connectingFromAnchor,
-    Offset? connectingPreviewEnd,
+    ConnectingModeState? connectingMode,
     bool clearSelection = false,
     bool clearConnecting = false,
   }) {
@@ -987,18 +1124,9 @@ class CanvasLoaded extends CanvasState {
       currentTool: currentTool ?? this.currentTool,
       currentColor: currentColor ?? this.currentColor,
       snapToGrid: snapToGrid ?? this.snapToGrid,
-      isConnecting: clearConnecting
-          ? false
-          : (isConnecting ?? this.isConnecting),
-      connectingFromShapeId: clearConnecting
+      connectingMode: clearConnecting
           ? null
-          : (connectingFromShapeId ?? this.connectingFromShapeId),
-      connectingFromAnchor: clearConnecting
-          ? null
-          : (connectingFromAnchor ?? this.connectingFromAnchor),
-      connectingPreviewEnd: clearConnecting
-          ? null
-          : (connectingPreviewEnd ?? this.connectingPreviewEnd),
+          : (connectingMode ?? this.connectingMode),
     );
   }
 
@@ -1045,10 +1173,7 @@ class CanvasPersistError extends CanvasLoaded {
     super.currentTool,
     super.currentColor,
     super.snapToGrid,
-    super.isConnecting,
-    super.connectingFromShapeId,
-    super.connectingFromAnchor,
-    super.connectingPreviewEnd,
+    super.connectingMode,
   });
 
   final BaseException exception;

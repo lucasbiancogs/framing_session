@@ -142,14 +142,17 @@ class CanvasConnector {
   // ---------------------------------------------------------------------------
 
   /// Paint the connector on the canvas.
-  void paint(Canvas canvas, {bool isSelected = false}) {
+  ///
+  /// [isSelected] - Whether this connector is selected (shows handles).
+  /// [draggingNodeIndex] - If set, only show this node's handle (during drag).
+  void paint(Canvas canvas, {bool isSelected = false, int? draggingNodeIndex}) {
     if (path.length < 2) return;
 
     _drawPath(canvas);
 
     // Draw handles when selected
     if (isSelected) {
-      _paintHandles(canvas);
+      _paintHandles(canvas, draggingNodeIndex: draggingNodeIndex);
     }
   }
 
@@ -169,22 +172,47 @@ class CanvasConnector {
     canvas.drawPath(linePath, paint);
   }
 
-  /// Paint handles for waypoint nodes.
-  void _paintHandles(Canvas canvas) {
-    final handlePaint = Paint()
+  /// Paint handles for interactive nodes (waypoints and segment mids).
+  ///
+  /// [draggingNodeIndex] - If set, only paint this node (hide others during drag).
+  void _paintHandles(Canvas canvas, {int? draggingNodeIndex}) {
+    final waypointFillPaint = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.fill;
 
-    final handleBorderPaint = Paint()
+    final waypointBorderPaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4;
 
-    // Draw handles at waypoint positions (skip anchor nodes at first and last)
+    final midFillPaint = Paint()
+      ..color = color.withAlpha(100)
+      ..style = PaintingStyle.fill;
+
+    final midBorderPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    // Draw handles (skip anchor nodes at first and last)
     for (int i = 1; i < nodes.length - 1; i++) {
-      final position = nodes[i].position;
-      canvas.drawCircle(position, 6, handlePaint);
-      canvas.drawCircle(position, 6, handleBorderPaint);
+      // If dragging a node, only show that node
+      if (draggingNodeIndex != null && i != draggingNodeIndex) {
+        continue;
+      }
+
+      final node = nodes[i];
+      final position = node.position;
+
+      if (node is SegmentMidNode) {
+        // Segment mid: smaller, semi-transparent (indicates "grab to create")
+        canvas.drawCircle(position, 5, midFillPaint);
+        canvas.drawCircle(position, 5, midBorderPaint);
+      } else {
+        // Waypoint: solid white with colored border
+        canvas.drawCircle(position, 6, waypointFillPaint);
+        canvas.drawCircle(position, 6, waypointBorderPaint);
+      }
     }
   }
 

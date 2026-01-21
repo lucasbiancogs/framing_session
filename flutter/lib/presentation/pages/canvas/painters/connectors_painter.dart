@@ -21,6 +21,8 @@ class ConnectorsPainter extends CustomPainter {
     required this.shapes,
     this.selectedConnectorId,
     this.selectedShapeId,
+    this.draggingConnectorId,
+    this.draggingNodeIndex,
     this.isConnecting = false,
     this.connectingFromShape,
     this.connectingFromAnchor,
@@ -33,6 +35,12 @@ class ConnectorsPainter extends CustomPainter {
   final List<CanvasShape> shapes;
   final String? selectedConnectorId;
   final String? selectedShapeId;
+
+  /// The connector being edited (node being dragged).
+  final String? draggingConnectorId;
+
+  /// The node index being dragged (only show this node during drag).
+  final int? draggingNodeIndex;
 
   /// Whether the user is currently in "connecting" mode.
   final bool isConnecting;
@@ -61,7 +69,13 @@ class ConnectorsPainter extends CustomPainter {
     // Draw connectors (behind shapes)
     for (final connector in connectors) {
       final isSelected = connector.id == selectedConnectorId;
-      connector.paint(canvas, isSelected: isSelected);
+      final isDragging = connector.id == draggingConnectorId;
+
+      connector.paint(
+        canvas,
+        isSelected: isSelected,
+        draggingNodeIndex: isDragging ? draggingNodeIndex : null,
+      );
     }
 
     // Draw anchor points on selected shape
@@ -198,6 +212,8 @@ class ConnectorsPainter extends CustomPainter {
         shapes != oldDelegate.shapes ||
         selectedConnectorId != oldDelegate.selectedConnectorId ||
         selectedShapeId != oldDelegate.selectedShapeId ||
+        draggingConnectorId != oldDelegate.draggingConnectorId ||
+        draggingNodeIndex != oldDelegate.draggingNodeIndex ||
         isConnecting != oldDelegate.isConnecting ||
         connectingFromShape != oldDelegate.connectingFromShape ||
         connectingFromAnchor != oldDelegate.connectingFromAnchor ||

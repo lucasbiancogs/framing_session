@@ -52,7 +52,11 @@ abstract class ConnectorRouter {
 /// This is the most basic routing strategy:
 /// - Nodes are connected with straight line segments
 /// - No automatic waypoint creation or obstacle avoidance
-/// - Collinear waypoints can be simplified (optional)
+/// - Adds [SegmentMidNode]s on segments adjacent to anchors for interaction
+///
+/// Node structure:
+/// - No waypoints: `Anchor → [Mid] → Anchor`
+/// - With waypoints: `Anchor → [Mid] → Waypoint(s) → [Mid] → Anchor`
 class LinearConnectorRouter implements ConnectorRouter {
   const LinearConnectorRouter();
 
@@ -64,17 +68,64 @@ class LinearConnectorRouter implements ConnectorRouter {
     required AnchorPoint targetAnchor,
     required List<Waypoint> waypoints,
   }) {
+    final sourceAnchorNode = AnchorNode(
+      anchor: sourceAnchor,
+      position: sourcePosition,
+    );
+    final targetAnchorNode = AnchorNode(
+      anchor: targetAnchor,
+      position: targetPosition,
+    );
+
+    if (waypoints.isEmpty) {
+      // No waypoints: Anchor → [Mid] → Anchor
+      final midPosition = Offset(
+        (sourcePosition.dx + targetPosition.dx) / 2,
+        (sourcePosition.dy + targetPosition.dy) / 2,
+      );
+      return [
+        sourceAnchorNode,
+        SegmentMidNode(position: midPosition),
+        targetAnchorNode,
+      ];
+    }
+
+    // With waypoints: Anchor → [Mid] → Waypoints → [Mid] → Anchor
+    final waypointNodes = waypoints.map(
+      (wp) => WaypointNode(position: Offset(wp.x, wp.y)),
+    );
+    final firstWaypoint = waypointNodes.first;
+    final lastWaypoint = waypointNodes.last;
+
+    // Mid between source anchor and first waypoint
+    final sourceMidPosition = Offset(
+      (sourcePosition.dx + firstWaypoint.position.dx) / 2,
+      (sourcePosition.dy + firstWaypoint.position.dy) / 2,
+    );
+
+    // Mid between last waypoint and target anchor
+    final targetMidPosition = Offset(
+      (lastWaypoint.position.dx + targetPosition.dx) / 2,
+      (lastWaypoint.position.dy + targetPosition.dy) / 2,
+    );
+
     return [
-      AnchorNode(anchor: sourceAnchor, position: sourcePosition),
-      ...waypoints.map((wp) => WaypointNode(position: Offset(wp.x, wp.y))),
-      AnchorNode(anchor: targetAnchor, position: targetPosition),
+      sourceAnchorNode,
+      SegmentMidNode(position: sourceMidPosition),
+      ...waypointNodes,
+      SegmentMidNode(position: targetMidPosition),
+      targetAnchorNode,
     ];
   }
 
   @override
   List<Offset> route(List<ConnectorNode> nodes) {
-    // Linear routing: just return the node positions in order
-    return nodes.map((node) => node.position).toList();
+    // Linear routing: return positions, but skip SegmentMidNodes for the path
+    // (they're only for interaction, not for drawing)
+    return nodes
+        .where((node) => node is! SegmentMidNode)
+        .map((node) => node.position)
+        .toList();
   }
 
   @override
@@ -83,66 +134,126 @@ class LinearConnectorRouter implements ConnectorRouter {
     int index,
     Offset newPosition,
   ) {
-    // Validate index (must be a waypoint, not an anchor)
     if (index <= 0 || index >= nodes.length - 1) {
       return nodes;
     }
 
     final node = nodes[index];
-    if (node is! WaypointNode) {
-      return nodes;
+
+    // Handle SegmentMidNode drag → converts to WaypointNode
+    if (node is SegmentMidNode) {
+      return _convertMidToWaypoint(nodes, index, newPosition);
     }
 
-    // Create new list with updated waypoint
-    final newNodes = List<ConnectorNode>.from(nodes);
-    newNodes[index] = WaypointNode(position: newPosition);
+    // Handle regular WaypointNode drag
+    if (node is WaypointNode) {
+      return _moveWaypoint(nodes, index, newPosition);
+    }
 
-    // Optionally simplify collinear points
-    return _simplifyCollinearNodes(newNodes);
+    return nodes;
   }
 
-  /// Remove waypoints that are collinear with their neighbors.
-  ///
-  /// A point is collinear if it lies on the line between its neighbors
-  /// (within a small tolerance).
-  List<ConnectorNode> _simplifyCollinearNodes(List<ConnectorNode> nodes) {
-    if (nodes.length <= 2) return nodes;
+  /// Convert a SegmentMidNode to a WaypointNode and recalculate mid nodes.
+  List<ConnectorNode> _convertMidToWaypoint(
+    List<ConnectorNode> nodes,
+    int index,
+    Offset newPosition,
+  ) {
+    // Find the anchor nodes (first and last)
+    final sourceAnchor = nodes.first as AnchorNode;
+    final targetAnchor = nodes.last as AnchorNode;
 
-    const tolerance = 5.0; // pixels
-    final result = <ConnectorNode>[nodes.first];
-
+    // Extract existing waypoints (excluding anchors and mid nodes)
+    final existingWaypoints = <WaypointNode>[];
     for (int i = 1; i < nodes.length - 1; i++) {
-      final prev = result.last.position;
-      final curr = nodes[i].position;
-      final next = nodes[i + 1].position;
-
-      // Skip anchor nodes - they should never be removed
-      if (nodes[i] is AnchorNode) {
-        result.add(nodes[i]);
-        continue;
-      }
-
-      // Check if current point is collinear with prev and next
-      if (!_isCollinear(prev, curr, next, tolerance)) {
-        result.add(nodes[i]);
+      if (nodes[i] is WaypointNode) {
+        existingWaypoints.add(nodes[i] as WaypointNode);
       }
     }
 
-    result.add(nodes.last);
-    return result;
+    // Determine where to insert the new waypoint based on which mid was dragged
+    final isSourceMid = index == 1; // First mid is always at index 1
+
+    final newWaypoint = WaypointNode(position: newPosition);
+
+    List<WaypointNode> allWaypoints;
+    if (existingWaypoints.isEmpty) {
+      // No existing waypoints, new one becomes the only waypoint
+      allWaypoints = [newWaypoint];
+    } else if (isSourceMid) {
+      // Insert at the beginning
+      allWaypoints = [newWaypoint, ...existingWaypoints];
+    } else {
+      // Insert at the end
+      allWaypoints = [...existingWaypoints, newWaypoint];
+    }
+
+    // Rebuild nodes with new mid nodes
+    return _buildNodesWithMids(sourceAnchor, targetAnchor, allWaypoints);
   }
 
-  /// Check if point [b] lies on the line segment from [a] to [c].
-  bool _isCollinear(Offset a, Offset b, Offset c, double tolerance) {
-    // Calculate the perpendicular distance from b to line ac
-    final lineLength = (c - a).distance;
-    if (lineLength < tolerance) return true; // a and c are very close
+  /// Move an existing waypoint and recalculate mid nodes.
+  List<ConnectorNode> _moveWaypoint(
+    List<ConnectorNode> nodes,
+    int index,
+    Offset newPosition,
+  ) {
+    final sourceAnchor = nodes.first as AnchorNode;
+    final targetAnchor = nodes.last as AnchorNode;
 
-    // Cross product gives area of parallelogram, divide by base for height
-    final crossProduct =
-        (c.dx - a.dx) * (b.dy - a.dy) - (c.dy - a.dy) * (b.dx - a.dx);
-    final distance = crossProduct.abs() / lineLength;
+    // Extract and update waypoints
+    final waypoints = <WaypointNode>[];
+    for (int i = 1; i < nodes.length - 1; i++) {
+      if (nodes[i] is WaypointNode) {
+        if (i == index) {
+          waypoints.add(WaypointNode(position: newPosition));
+        } else {
+          waypoints.add(nodes[i] as WaypointNode);
+        }
+      }
+    }
 
-    return distance < tolerance;
+    // Rebuild nodes with updated mid nodes
+    return _buildNodesWithMids(sourceAnchor, targetAnchor, waypoints);
+  }
+
+  /// Build the complete node list with SegmentMidNodes.
+  List<ConnectorNode> _buildNodesWithMids(
+    AnchorNode sourceAnchor,
+    AnchorNode targetAnchor,
+    List<WaypointNode> waypoints,
+  ) {
+    if (waypoints.isEmpty) {
+      final midPosition = Offset(
+        (sourceAnchor.position.dx + targetAnchor.position.dx) / 2,
+        (sourceAnchor.position.dy + targetAnchor.position.dy) / 2,
+      );
+      return [
+        sourceAnchor,
+        SegmentMidNode(position: midPosition),
+        targetAnchor,
+      ];
+    }
+
+    final firstWaypoint = waypoints.first;
+    final lastWaypoint = waypoints.last;
+
+    final sourceMidPosition = Offset(
+      (sourceAnchor.position.dx + firstWaypoint.position.dx) / 2,
+      (sourceAnchor.position.dy + firstWaypoint.position.dy) / 2,
+    );
+
+    final targetMidPosition = Offset(
+      (lastWaypoint.position.dx + targetAnchor.position.dx) / 2,
+      (lastWaypoint.position.dy + targetAnchor.position.dy) / 2,
+    );
+
+    return [
+      sourceAnchor,
+      SegmentMidNode(position: sourceMidPosition),
+      ...waypoints,
+      SegmentMidNode(position: targetMidPosition),
+      targetAnchor,
+    ];
   }
 }
