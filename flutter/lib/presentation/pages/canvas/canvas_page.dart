@@ -87,15 +87,33 @@ class CanvasPage extends ConsumerWidget {
                   users: collaborativeCanvasState.onlineUsers,
                 ),
               ),
-            // Delete button (only when shape is selected)
-            if (state is CanvasLoaded && state.selectedShapeId != null)
+            // Delete button (when shape or connector is selected)
+            if (state is CanvasLoaded &&
+                (state.selectedShapeId != null ||
+                    state.selectedConnectorId != null))
               Tooltip(
-                tooltip: const TooltipContainer(
-                  child: Text('Delete selected shape'),
+                tooltip: TooltipContainer(
+                  child: Text(
+                    state.selectedConnectorId != null
+                        ? 'Delete selected connector'
+                        : 'Delete selected shape',
+                  ),
                 ).call,
                 child: IconButton.ghost(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () {
+                    // Delete connector if one is selected
+                    if (state.selectedConnectorId != null) {
+                      final operation = DeleteConnectorCanvasOperation(
+                        opId: const Uuid().v4(),
+                        connectorId: state.selectedConnectorId!,
+                      );
+                      vm.applyOperation(operation);
+                      collaborativeVm.broadcastOperation(operation);
+                      return;
+                    }
+
+                    // Delete shape if one is selected
                     final shapeId = state.selectedShapeId;
                     if (shapeId == null) return;
 

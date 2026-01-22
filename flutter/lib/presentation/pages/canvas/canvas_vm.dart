@@ -139,10 +139,25 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void selectShape(String? shapeId) {
     if (state is! CanvasLoaded) return;
 
-    state = _loadedState.copyWith(
-      selectedShapeId: shapeId,
-      clearSelection: shapeId == null,
-    );
+    if (shapeId == null) {
+      // Clear selection
+      state = _loadedState.copyWith(clearSelection: true);
+    } else {
+      // Select shape and clear connector selection
+      state = CanvasLoaded(
+        shapes: _loadedState.shapes,
+        connectors: _loadedState.connectors,
+        selectedShapeId: shapeId,
+        selectedConnectorId: null, // Clear connector selection
+        isEditingText: false,
+        panOffset: _loadedState.panOffset,
+        zoom: _loadedState.zoom,
+        currentTool: _loadedState.currentTool,
+        currentColor: _loadedState.currentColor,
+        snapToGrid: _loadedState.snapToGrid,
+        connectingMode: _loadedState.connectingMode,
+      );
+    }
   }
 
   /// Change the current tool.
@@ -505,6 +520,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
   }
 
   /// Delete the currently selected shape.
+  ///
+  /// Also deletes any connectors that reference this shape.
   List<CanvasShape> _applyDelete(String shapeId) {
     if (state is! CanvasLoaded) return _loadedState.shapes;
 
@@ -512,9 +529,50 @@ class CanvasVM extends StateNotifier<CanvasState> {
         .where((s) => s.id != shapeId)
         .toList();
 
-    selectShape(null);
+    // Find and delete connectors connected to this shape
+    final connectorsToDelete = _loadedState.connectors
+        .where(
+          (c) =>
+              c.entity.sourceShapeId == shapeId ||
+              c.entity.targetShapeId == shapeId,
+        )
+        .toList();
 
-    state = _loadedState.copyWith(shapes: newShapes);
+    final newConnectors = _loadedState.connectors
+        .where(
+          (c) =>
+              c.entity.sourceShapeId != shapeId &&
+              c.entity.targetShapeId != shapeId,
+        )
+        .toList();
+
+    // Delete connectors from database
+    for (final connector in connectorsToDelete) {
+      _shapeServices.deleteConnector(connector.id);
+    }
+
+    // Check if selected connector was deleted
+    final selectedConnectorId = _loadedState.selectedConnectorId;
+    final connectorSelectionCleared =
+        selectedConnectorId != null &&
+        connectorsToDelete.any((c) => c.id == selectedConnectorId);
+
+    // Update state with shapes, connectors, and clear selection
+    state = CanvasLoaded(
+      shapes: newShapes,
+      connectors: newConnectors,
+      selectedShapeId: null,
+      selectedConnectorId: connectorSelectionCleared
+          ? null
+          : selectedConnectorId,
+      isEditingText: false,
+      panOffset: _loadedState.panOffset,
+      zoom: _loadedState.zoom,
+      currentTool: _loadedState.currentTool,
+      currentColor: _loadedState.currentColor,
+      snapToGrid: _loadedState.snapToGrid,
+      connectingMode: _loadedState.connectingMode,
+    );
 
     return newShapes;
   }
@@ -651,10 +709,25 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void selectConnector(String? connectorId) {
     if (state is! CanvasLoaded) return;
 
-    state = _loadedState.copyWith(
-      selectedConnectorId: connectorId,
-      selectedShapeId: null,
-    );
+    if (connectorId == null) {
+      // Just clear connector selection
+      state = _loadedState.copyWith(selectedConnectorId: null);
+    } else {
+      // Select connector and clear shape selection
+      state = CanvasLoaded(
+        shapes: _loadedState.shapes,
+        connectors: _loadedState.connectors,
+        selectedShapeId: null, // Clear shape selection
+        selectedConnectorId: connectorId,
+        isEditingText: false,
+        panOffset: _loadedState.panOffset,
+        zoom: _loadedState.zoom,
+        currentTool: _loadedState.currentTool,
+        currentColor: _loadedState.currentColor,
+        snapToGrid: _loadedState.snapToGrid,
+        connectingMode: _loadedState.connectingMode,
+      );
+    }
   }
 
   /// Delete the currently selected connector.
