@@ -137,10 +137,6 @@ class CanvasConnector {
     return nodes.indexOf(node);
   }
 
-  // ---------------------------------------------------------------------------
-  // Painting
-  // ---------------------------------------------------------------------------
-
   /// Paint the connector on the canvas.
   ///
   /// [isSelected] - Whether this connector is selected (shows handles).
@@ -215,10 +211,6 @@ class CanvasConnector {
       }
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Copying
-  // ---------------------------------------------------------------------------
 
   /// Create a copy with updated values.
   CanvasConnector copyWith({

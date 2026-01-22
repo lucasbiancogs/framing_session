@@ -1,3 +1,4 @@
+import 'dart:math' show sqrt;
 import 'dart:ui';
 
 import 'package:whiteboard/domain/entities/anchor_point.dart';
@@ -58,7 +59,9 @@ abstract class ConnectorRouter {
 /// - No waypoints: `Anchor → [Mid] → Anchor`
 /// - With waypoints: `Anchor → [Mid] → Waypoint(s) → [Mid] → Anchor`
 class LinearConnectorRouter implements ConnectorRouter {
-  const LinearConnectorRouter();
+  const LinearConnectorRouter({this.collinearThreshold = 16});
+
+  final double collinearThreshold;
 
   @override
   List<ConnectorNode> createInitialNodes({
@@ -188,8 +191,15 @@ class LinearConnectorRouter implements ConnectorRouter {
       allWaypoints = [...existingWaypoints, newWaypoint];
     }
 
+    // Simplify collinear waypoints
+    final simplifiedWaypoints = _simplifyCollinearWaypoints(
+      sourceAnchor.position,
+      targetAnchor.position,
+      allWaypoints,
+    );
+
     // Rebuild nodes with new mid nodes
-    return _buildNodesWithMids(sourceAnchor, targetAnchor, allWaypoints);
+    return _buildNodesWithMids(sourceAnchor, targetAnchor, simplifiedWaypoints);
   }
 
   /// Move an existing waypoint and recalculate mid nodes.
@@ -213,8 +223,15 @@ class LinearConnectorRouter implements ConnectorRouter {
       }
     }
 
+    // Simplify collinear waypoints
+    final simplifiedWaypoints = _simplifyCollinearWaypoints(
+      sourceAnchor.position,
+      targetAnchor.position,
+      waypoints,
+    );
+
     // Rebuild nodes with updated mid nodes
-    return _buildNodesWithMids(sourceAnchor, targetAnchor, waypoints);
+    return _buildNodesWithMids(sourceAnchor, targetAnchor, simplifiedWaypoints);
   }
 
   /// Build the complete node list with SegmentMidNodes.
@@ -255,5 +272,76 @@ class LinearConnectorRouter implements ConnectorRouter {
       SegmentMidNode(position: targetMidPosition),
       targetAnchor,
     ];
+  }
+
+  /// Simplify waypoints by removing those that are collinear with neighbors.
+  ///
+  /// A waypoint is removed if it lies on the line between its neighbors
+  /// within [_collinearThreshold] distance.
+  List<WaypointNode> _simplifyCollinearWaypoints(
+    Offset sourcePosition,
+    Offset targetPosition,
+    List<WaypointNode> waypoints,
+  ) {
+    if (waypoints.isEmpty) return waypoints;
+
+    // Build list of all points: source → waypoints → target
+    final allPoints = <Offset>[
+      sourcePosition,
+      ...waypoints.map((wp) => wp.position),
+      targetPosition,
+    ];
+
+    // Track which waypoints to keep (indices in original waypoints list)
+    final keepIndices = <int>{};
+
+    // Check each waypoint (indices 1 to allPoints.length - 2 in allPoints,
+    // which maps to indices 0 to waypoints.length - 1 in waypoints)
+    for (int i = 0; i < waypoints.length; i++) {
+      final prevPoint = allPoints[i]; // Previous point (source or waypoint)
+      final currentPoint = allPoints[i + 1]; // Current waypoint
+      final nextPoint = allPoints[i + 2]; // Next point (waypoint or target)
+
+      if (!_isCollinear(prevPoint, currentPoint, nextPoint)) {
+        keepIndices.add(i);
+      }
+    }
+
+    // Return filtered waypoints
+    return [
+      for (int i = 0; i < waypoints.length; i++)
+        if (keepIndices.contains(i)) waypoints[i],
+    ];
+  }
+
+  /// Check if point B is collinear with line A-C within threshold.
+  ///
+  /// Returns true if the perpendicular distance from B to line A-C
+  /// is less than [_collinearThreshold].
+  bool _isCollinear(Offset a, Offset b, Offset c) {
+    final distance = _distanceToLine(b, a, c);
+    return distance < collinearThreshold;
+  }
+
+  /// Calculate perpendicular distance from point P to line defined by A-B.
+  ///
+  /// Uses the formula: |((B-A) × (A-P))| / |B-A|
+  /// where × is the 2D cross product (returns a scalar).
+  double _distanceToLine(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final ap = p - a;
+
+    // Handle degenerate case where A and B are the same point
+    final abLengthSquared = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (abLengthSquared < 0.0001) {
+      // Return distance to point A
+      return (p - a).distance;
+    }
+
+    // 2D cross product: ab × ap = ab.dx * ap.dy - ab.dy * ap.dx
+    final crossProduct = ab.dx * ap.dy - ab.dy * ap.dx;
+
+    // Perpendicular distance = |cross product| / |ab|
+    return crossProduct.abs() / sqrt(abLengthSquared);
   }
 }
