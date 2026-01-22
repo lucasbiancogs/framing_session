@@ -727,16 +727,21 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     final connector = _loadedState.connectors[connectorIndex];
 
+    // Apply snap-to-grid if enabled
+    final snappedPosition = _loadedState.snapToGrid
+        ? _snapOffset(newPosition)
+        : newPosition;
+
     // Just update the node position (no optimization during drag)
     final newNodes = List<ConnectorNode>.from(connector.nodes);
     final node = newNodes[nodeIndex];
 
     // Update position based on node type
     if (node is WaypointNode) {
-      newNodes[nodeIndex] = WaypointNode(position: newPosition);
+      newNodes[nodeIndex] = WaypointNode(position: snappedPosition);
     } else if (node is SegmentMidNode) {
       // During drag, keep it as SegmentMidNode (will be converted on finalize)
-      newNodes[nodeIndex] = SegmentMidNode(position: newPosition);
+      newNodes[nodeIndex] = SegmentMidNode(position: snappedPosition);
     }
 
     // Build path: skip SegmentMidNodes EXCEPT the one being dragged
@@ -1050,7 +1055,7 @@ class CanvasLoaded extends CanvasState {
     this.zoom = 1.0,
     this.currentTool = CanvasTool.select,
     this.currentColor = '#4ED09A',
-    this.snapToGrid = false,
+    this.snapToGrid = true,
     this.connectingMode,
   });
 
