@@ -3,7 +3,9 @@ import 'package:whiteboard/domain/entities/connector.dart';
 import 'package:whiteboard/presentation/helpers/color_helper.dart'
     as color_helper;
 
+import 'canvas_operation.dart';
 import 'connector_node.dart';
+import 'edit_intent.dart';
 
 /// Presentation-layer wrapper for a [Connector] entity.
 ///
@@ -135,6 +137,90 @@ class CanvasConnector {
   int getWaypointIndex(ConnectorNode node) {
     if (node is! WaypointNode) return -1;
     return nodes.indexOf(node);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edit Intent
+  // ---------------------------------------------------------------------------
+
+  /// Determine what kind of edit the user intends based on touch position.
+  ///
+  /// Returns null if the point doesn't hit any interactive area.
+  ///
+  /// This follows the same pattern as [CanvasShape.getEditIntent].
+  EditIntent? getEditIntent(Offset point) {
+    // Check nodes first (higher priority than segments)
+    final node = hitTestNode(point);
+    if (node != null) {
+      final nodeIndex = nodes.indexOf(node);
+      // Skip anchor nodes (first and last) - they can't be dragged
+      if (nodeIndex > 0 && nodeIndex < nodes.length - 1) {
+        return MoveConnectorNodeIntent(nodeIndex);
+      }
+    }
+
+    // Check segments (for selection)
+    if (hitTestSegment(point) != null) {
+      return const SelectConnectorIntent();
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operation Application
+  // ---------------------------------------------------------------------------
+
+  /// Apply an operation to this connector, returning a new connector.
+  ///
+  /// Operations are applied immutably — the original connector is unchanged.
+  ///
+  /// This follows the same pattern as [CanvasShape.apply].
+  ///
+  /// Note: Path recalculation requires the router, which is handled by the
+  /// ViewModel. This method updates node positions and rebuilds a simple path.
+  CanvasConnector apply(CanvasOperation operation) {
+    return switch (operation) {
+      MoveConnectorNodeCanvasOperation(:final nodeIndex, :final position) =>
+        _applyMoveNode(nodeIndex, position),
+      _ => this,
+    };
+  }
+
+  /// Apply a move node operation.
+  ///
+  /// Updates the node at [nodeIndex] to [position] and rebuilds the path
+  /// as straight lines through all nodes.
+  CanvasConnector _applyMoveNode(int nodeIndex, Offset position) {
+    if (nodeIndex < 0 || nodeIndex >= nodes.length) return this;
+
+    // Update the node at the given index
+    final newNodes = List<ConnectorNode>.from(nodes);
+    final node = newNodes[nodeIndex];
+
+    // Update position based on node type
+    if (node is WaypointNode) {
+      newNodes[nodeIndex] = WaypointNode(position: position);
+    } else if (node is SegmentMidNode) {
+      // Keep as SegmentMidNode during drag (converted on finalize)
+      newNodes[nodeIndex] = SegmentMidNode(position: position);
+    } else {
+      // Anchor nodes cannot be moved via this operation
+      return this;
+    }
+
+    // Rebuild path as straight lines through nodes
+    // (Skip SegmentMidNodes except the one being dragged)
+    final newPath = <Offset>[];
+    for (int i = 0; i < newNodes.length; i++) {
+      final n = newNodes[i];
+      if (n is SegmentMidNode && i != nodeIndex) {
+        continue; // Skip non-dragged mid nodes
+      }
+      newPath.add(n.position);
+    }
+
+    return copyWith(nodes: newNodes, path: newPath);
   }
 
   /// Paint the connector on the canvas.

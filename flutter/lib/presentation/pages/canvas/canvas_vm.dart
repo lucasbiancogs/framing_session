@@ -307,6 +307,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
         handle: handle,
         bounds: _calculateNewBounds(initialBounds, handle, totalDelta),
       ),
+      // Connector intents are not handled here (shape-specific method)
+      MoveConnectorNodeIntent() || SelectConnectorIntent() => null,
     };
   }
 
@@ -821,6 +823,24 @@ class CanvasVM extends StateNotifier<CanvasState> {
     if (node == null) return null;
 
     return connector.nodes.indexOf(node);
+  }
+
+  /// Get the edit intent for a connector at a canvas position.
+  ///
+  /// Returns a tuple of (connectorId, intent) if a connector is hit, null otherwise.
+  /// This follows the same pattern as [getIntentAtPosition] for shapes.
+  ({String connectorId, EditIntent intent})? getConnectorIntentAtPosition(
+    Offset canvasPosition,
+  ) {
+    if (state is! CanvasLoaded) return null;
+
+    for (final connector in _loadedState.connectors.reversed) {
+      final intent = connector.getEditIntent(canvasPosition);
+      if (intent != null) {
+        return (connectorId: connector.id, intent: intent);
+      }
+    }
+    return null;
   }
 
   /// Apply a move connector node operation (ephemeral, not persisted).

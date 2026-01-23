@@ -178,30 +178,29 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       return;
     }
 
-    // Hit test connectors
-    final connectorId = vm.hitTestConnector(position);
-    if (connectorId != null) {
+    // Hit test connectors using the intent pattern
+    final connectorHit = vm.getConnectorIntentAtPosition(position);
+    if (connectorHit != null) {
       _shapeInteractionState = null;
       _panInteractionState = null;
 
-      // Check if hitting a node on the connector (for dragging)
-      final nodeIndex = vm.hitTestConnectorNode(connectorId, position);
-      if (nodeIndex != null && nodeIndex > 0) {
-        // Don't allow dragging anchor nodes (first and last)
-        final connector = state.connectors.firstWhere(
-          (c) => c.id == connectorId,
-        );
-        if (nodeIndex < connector.nodes.length - 1) {
+      // Handle connector interaction based on intent
+      switch (connectorHit.intent) {
+        case MoveConnectorNodeIntent(:final nodeIndex):
           _connectorInteractionState = _ConnectorInteractionState.node(
-            connectorId: connectorId,
+            connectorId: connectorHit.connectorId,
             nodeIndex: nodeIndex,
             dragStartPosition: position,
           );
-        }
+        case SelectConnectorIntent():
+          // Just selecting, no drag state needed
+          _connectorInteractionState = null;
+        default:
+          _connectorInteractionState = null;
       }
 
       // Select the connector
-      vm.selectConnector(connectorId);
+      vm.selectConnector(connectorHit.connectorId);
       return;
     }
 

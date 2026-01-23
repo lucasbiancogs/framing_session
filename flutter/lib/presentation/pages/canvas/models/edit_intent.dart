@@ -44,3 +44,26 @@ class ResizeIntent extends EditIntent {
   @override
   String toString() => 'ResizeIntent(handle: $handle)';
 }
+
+// ---------------------------------------------------------------------------
+// Connector-Specific Intents
+// ---------------------------------------------------------------------------
+
+/// User intends to move a connector node (waypoint or segment mid).
+class MoveConnectorNodeIntent extends EditIntent {
+  const MoveConnectorNodeIntent(this.nodeIndex);
+
+  /// The index of the node in the connector's nodes list.
+  final int nodeIndex;
+
+  @override
+  List<Object?> get props => [nodeIndex];
+
+  @override
+  String toString() => 'MoveConnectorNodeIntent(nodeIndex: $nodeIndex)';
+}
+
+/// User intends to select a connector (clicked on a segment).
+class SelectConnectorIntent extends EditIntent {
+  const SelectConnectorIntent();
+}
