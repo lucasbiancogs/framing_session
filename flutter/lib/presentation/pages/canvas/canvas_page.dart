@@ -117,7 +117,7 @@ class CanvasPage extends ConsumerWidget {
                     final shapeId = state.selectedShapeId;
                     if (shapeId == null) return;
 
-                    final operation = DeleteShapeOperation(
+                    final operation = DeleteShapeCanvasOperation(
                       opId: const Uuid().v4(),
                       shapeId: shapeId,
                     );

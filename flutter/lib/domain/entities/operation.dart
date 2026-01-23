@@ -14,23 +14,22 @@ sealed class Operation extends Equatable {
   List<Object?> get props => [opId, shapeId];
 }
 
-class MoveOperation extends Operation {
-  const MoveOperation({
+class MoveShapeOperation extends Operation {
+  const MoveShapeOperation({
     required super.opId,
     required super.shapeId,
     required this.x,
     required this.y,
   });
 
-  final double x;
-  final double y;
+  final double x, y;
 
   @override
   List<Object?> get props => [...super.props, x, y];
 }
 
-class ResizeOperation extends Operation {
-  const ResizeOperation({
+class ResizeShapeOperation extends Operation {
+  const ResizeShapeOperation({
     required super.opId,
     required super.shapeId,
     required this.x,
@@ -39,17 +38,14 @@ class ResizeOperation extends Operation {
     required this.height,
   });
 
-  final double x;
-  final double y;
-  final double width;
-  final double height;
+  final double x, y, width, height;
 
   @override
   List<Object?> get props => [...super.props, x, y, width, height];
 }
 
-class CreateOperation extends Operation {
-  const CreateOperation({
+class CreateShapeOperation extends Operation {
+  const CreateShapeOperation({
     required super.opId,
     required super.shapeId,
     required this.shapeType,
@@ -60,22 +56,21 @@ class CreateOperation extends Operation {
 
   final ShapeType shapeType;
   final String color;
-  final double x;
-  final double y;
+  final double x, y;
 
   @override
   List<Object?> get props => [...super.props, shapeType, x, y, color];
 }
 
-class DeleteOperation extends Operation {
-  const DeleteOperation({required super.opId, required super.shapeId});
+class DeleteShapeOperation extends Operation {
+  const DeleteShapeOperation({required super.opId, required super.shapeId});
 
   @override
   List<Object?> get props => [...super.props];
 }
 
-class TextOperation extends Operation {
-  const TextOperation({
+class TextShapeOperation extends Operation {
+  const TextShapeOperation({
     required super.opId,
     required super.shapeId,
     required this.text,
@@ -147,8 +142,8 @@ class DeleteConnectorOperation extends Operation {
 // -------------------------------------------------------------------------
 
 /// Update the connecting preview position (ephemeral, not persisted).
-class UpdateConnectingPreviewDomainOperation extends Operation {
-  const UpdateConnectingPreviewDomainOperation({
+class UpdateConnectingPreviewOperation extends Operation {
+  const UpdateConnectingPreviewOperation({
     required super.opId,
     required super.shapeId, // This is the source shape ID
     required this.sourceAnchor,
@@ -157,16 +152,15 @@ class UpdateConnectingPreviewDomainOperation extends Operation {
   });
 
   final AnchorPoint sourceAnchor;
-  final double x;
-  final double y;
+  final double x, y;
 
   @override
   List<Object?> get props => [...super.props, sourceAnchor, x, y];
 }
 
 /// Move a connector node during drag (ephemeral, not persisted).
-class MoveConnectorNodeDomainOperation extends Operation {
-  const MoveConnectorNodeDomainOperation({
+class MoveConnectorNodeOperation extends Operation {
+  const MoveConnectorNodeOperation({
     required super.opId,
     required super.shapeId, // This is the connector ID
     required this.nodeIndex,
@@ -175,8 +169,7 @@ class MoveConnectorNodeDomainOperation extends Operation {
   });
 
   final int nodeIndex;
-  final double x;
-  final double y;
+  final double x, y;
 
   @override
   List<Object?> get props => [...super.props, nodeIndex, x, y];

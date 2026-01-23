@@ -310,8 +310,8 @@ class RectangleCanvasShape extends CanvasShape {
   @override
   RectangleCanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveShapeOperation(:final position) => applyMove(position),
-      ResizeShapeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeCanvasOperation(:final position) => applyMove(position),
+      ResizeShapeCanvasOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
 
@@ -448,8 +448,8 @@ class CircleCanvasShape extends CanvasShape {
   @override
   CanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveShapeOperation(:final position) => applyMove(position),
-      ResizeShapeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeCanvasOperation(:final position) => applyMove(position),
+      ResizeShapeCanvasOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as CircleCanvasShape;
@@ -575,8 +575,8 @@ class TriangleCanvasShape extends CanvasShape {
   @override
   CanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveShapeOperation(:final position) => applyMove(position),
-      ResizeShapeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeCanvasOperation(:final position) => applyMove(position),
+      ResizeShapeCanvasOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as TriangleCanvasShape;
@@ -701,8 +701,8 @@ class TextCanvasShape extends CanvasShape {
   @override
   CanvasShape apply(CanvasOperation operation) {
     final newShape = switch (operation) {
-      MoveShapeOperation(:final position) => applyMove(position),
-      ResizeShapeOperation(:final bounds) => applyResize(bounds),
+      MoveShapeCanvasOperation(:final position) => applyMove(position),
+      ResizeShapeCanvasOperation(:final bounds) => applyResize(bounds),
       _ => this,
     };
     return newShape as TextCanvasShape;

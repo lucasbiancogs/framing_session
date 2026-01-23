@@ -46,7 +46,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   final double gridSize = 20.0;
   final double initialShapeSize = 150.0;
-  final double zoomDimifier = 4;
+  final double sensitivity = 2;
+  final double zoomSensitivity = 0.25;
   final double zoomMin = _zoomMin;
   final double zoomMax = _zoomMax;
 
@@ -247,10 +248,10 @@ class CanvasVM extends StateNotifier<CanvasState> {
         _applyDeleteConnector(operation, persist: persist);
         return;
       // Ephemeral operations (never persisted)
-      case UpdateConnectingPreviewOperation():
+      case UpdateConnectingPreviewCanvasOperation():
         _applyUpdateConnectingPreview(operation);
         return;
-      case MoveConnectorNodeOperation():
+      case MoveConnectorNodeCanvasOperation():
         _applyMoveConnectorNode(operation);
         return;
       default:
@@ -258,20 +259,20 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }
 
     final newShapes = switch (operation) {
-      MoveShapeOperation(:final shapeId, :final position) => _applyMove(
+      MoveShapeCanvasOperation(:final shapeId, :final position) => _applyMove(
         shapeId,
         position,
       ),
-      ResizeShapeOperation(:final shapeId, :final bounds) => _applyResize(
+      ResizeShapeCanvasOperation(:final shapeId, :final bounds) => _applyResize(
         shapeId,
         bounds,
       ),
-      TextShapeOperation(:final shapeId, :final text) => _applyTextEdit(
+      TextShapeCanvasOperation(:final shapeId, :final text) => _applyTextEdit(
         shapeId,
         text,
       ),
-      CreateShapeOperation() => _applyCreate(operation),
-      DeleteShapeOperation(:final shapeId) => _applyDelete(
+      CreateShapeCanvasOperation() => _applyCreate(operation),
+      DeleteShapeCanvasOperation(:final shapeId) => _applyDelete(
         shapeId,
         persist: persist,
       ),
@@ -295,12 +296,12 @@ class CanvasVM extends StateNotifier<CanvasState> {
     final opId = const Uuid().v4();
 
     return switch (intent) {
-      MoveIntent() => MoveShapeOperation(
+      MoveIntent() => MoveShapeCanvasOperation(
         opId: opId,
         shapeId: shapeId,
         position: initialBounds.topLeft + totalDelta,
       ),
-      ResizeIntent(:final handle) => ResizeShapeOperation(
+      ResizeIntent(:final handle) => ResizeShapeCanvasOperation(
         opId: opId,
         shapeId: shapeId,
         handle: handle,
@@ -402,7 +403,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   /// Schedule debounced persistence for update operations.
   void _scheduleDebouncedPersist(CanvasOperation operation) {
     switch (operation) {
-      case CreateShapeOperation():
+      case CreateShapeCanvasOperation():
         final shape = _loadedState.shapes.firstWhere(
           (s) => s.id == operation.shapeId,
           orElse: () =>
@@ -410,7 +411,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
         );
         _shapeServices.createShape(shape.entity);
         return;
-      case DeleteShapeOperation():
+      case DeleteShapeCanvasOperation():
         _shapeServices.deleteShape(operation.shapeId);
         return;
       default:
@@ -419,9 +420,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     // Only debounce move, resize, rotate, and text operations
     final shapeId = switch (operation) {
-      MoveShapeOperation(:final shapeId) => shapeId,
-      ResizeShapeOperation(:final shapeId) => shapeId,
-      TextShapeOperation(:final shapeId) => shapeId,
+      MoveShapeCanvasOperation(:final shapeId) => shapeId,
+      ResizeShapeCanvasOperation(:final shapeId) => shapeId,
+      TextShapeCanvasOperation(:final shapeId) => shapeId,
       _ => null,
     };
 
@@ -516,15 +517,15 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }).toList();
   }
 
-  List<CanvasShape> _applyCreate(CreateShapeOperation operation) {
+  List<CanvasShape> _applyCreate(CreateShapeCanvasOperation operation) {
     if (state is! CanvasLoaded) return _loadedState.shapes;
 
     final shape = Shape(
       id: operation.shapeId,
       sessionId: _sessionId,
       shapeType: operation.shapeType,
-      x: operation.x,
-      y: operation.y,
+      x: operation.position.dx,
+      y: operation.position.dy,
       width: initialShapeSize,
       height: initialShapeSize,
       color: operation.color,
@@ -624,7 +625,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   /// Apply an update connecting preview operation (ephemeral, not persisted).
   void _applyUpdateConnectingPreview(
-    UpdateConnectingPreviewOperation operation,
+    UpdateConnectingPreviewCanvasOperation operation,
   ) {
     if (state is! CanvasLoaded) return;
 
@@ -686,7 +687,10 @@ class CanvasVM extends StateNotifier<CanvasState> {
   /// Complete connecting by creating a new shape and connector.
   ///
   /// Returns both operations for broadcasting, or null if invalid.
-  ({CreateShapeOperation shape, CreateConnectorCanvasOperation connector})?
+  ({
+    CreateShapeCanvasOperation shape,
+    CreateConnectorCanvasOperation connector,
+  })?
   completeConnectingWithNewShape(Offset position) {
     if (state is! CanvasLoaded || !_loadedState.isConnecting) return null;
 
@@ -700,13 +704,15 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     // Create new shape
     final shapeId = const Uuid().v4();
-    final shapeOperation = CreateShapeOperation(
+    final shapeOperation = CreateShapeCanvasOperation(
       opId: const Uuid().v4(),
       shapeId: shapeId,
       shapeType: ShapeType.rectangle,
       color: _loadedState.currentColor,
-      x: position.dx - initialShapeSize / 2,
-      y: position.dy - initialShapeSize / 2,
+      position: Offset(
+        position.dx - initialShapeSize / 2,
+        position.dy - initialShapeSize / 2,
+      ),
     );
 
     applyOperation(shapeOperation, persist: true);
@@ -821,7 +827,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   ///
   /// This only updates the node position without optimization.
   /// Call [finalizeConnectorNodeMove] on release to persist waypoints.
-  void _applyMoveConnectorNode(MoveConnectorNodeOperation operation) {
+  void _applyMoveConnectorNode(MoveConnectorNodeCanvasOperation operation) {
     if (state is! CanvasLoaded) return;
 
     final connectorIndex = _loadedState.connectors.indexWhere(

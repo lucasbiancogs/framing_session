@@ -34,11 +34,11 @@ sealed class OperationDto {
     final type = json['operation_type'] as String;
 
     return switch (type) {
-      _OperationTypes.move => MoveOperationDto.fromJson(json),
-      _OperationTypes.resize => ResizeOperationDto.fromJson(json),
-      _OperationTypes.create => CreateOperationDto.fromJson(json),
-      _OperationTypes.delete => DeleteOperationDto.fromJson(json),
-      _OperationTypes.text => TextOperationDto.fromJson(json),
+      _OperationTypes.move => MoveShapeOperationDto.fromJson(json),
+      _OperationTypes.resize => ResizeShapeOperationDto.fromJson(json),
+      _OperationTypes.create => CreateShapeOperationDto.fromJson(json),
+      _OperationTypes.delete => DeleteShapeOperationDto.fromJson(json),
+      _OperationTypes.text => TextShapeOperationDto.fromJson(json),
       _OperationTypes.createConnector => CreateConnectorOperationDto.fromJson(
         json,
       ),
@@ -58,11 +58,11 @@ sealed class OperationDto {
 
   factory OperationDto.fromEntity(Operation entity) {
     return switch (entity) {
-      MoveOperation() => MoveOperationDto.fromEntity(entity),
-      ResizeOperation() => ResizeOperationDto.fromEntity(entity),
-      CreateOperation() => CreateOperationDto.fromEntity(entity),
-      DeleteOperation() => DeleteOperationDto.fromEntity(entity),
-      TextOperation() => TextOperationDto.fromEntity(entity),
+      MoveShapeOperation() => MoveShapeOperationDto.fromEntity(entity),
+      ResizeShapeOperation() => ResizeShapeOperationDto.fromEntity(entity),
+      CreateShapeOperation() => CreateShapeOperationDto.fromEntity(entity),
+      DeleteShapeOperation() => DeleteShapeOperationDto.fromEntity(entity),
+      TextShapeOperation() => TextShapeOperationDto.fromEntity(entity),
       CreateConnectorOperation() => CreateConnectorOperationDto.fromEntity(
         entity,
       ),
@@ -72,10 +72,11 @@ sealed class OperationDto {
         entity,
       ),
       // Ephemeral operations
-      UpdateConnectingPreviewDomainOperation() =>
+      UpdateConnectingPreviewOperation() =>
         UpdateConnectingPreviewOperationDto.fromEntity(entity),
-      MoveConnectorNodeDomainOperation() =>
-        MoveConnectorNodeOperationDto.fromEntity(entity),
+      MoveConnectorNodeOperation() => MoveConnectorNodeOperationDto.fromEntity(
+        entity,
+      ),
     };
   }
 
@@ -88,8 +89,8 @@ sealed class OperationDto {
   };
 }
 
-class MoveOperationDto extends OperationDto {
-  const MoveOperationDto({
+class MoveShapeOperationDto extends OperationDto {
+  const MoveShapeOperationDto({
     required super.opId,
     required super.shapeId,
     required super.type,
@@ -100,8 +101,8 @@ class MoveOperationDto extends OperationDto {
   final double x;
   final double y;
 
-  factory MoveOperationDto.fromJson(Map<String, dynamic> json) {
-    return MoveOperationDto(
+  factory MoveShapeOperationDto.fromJson(Map<String, dynamic> json) {
+    return MoveShapeOperationDto(
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
@@ -110,24 +111,25 @@ class MoveOperationDto extends OperationDto {
     );
   }
 
-  factory MoveOperationDto.fromEntity(MoveOperation entity) => MoveOperationDto(
-    opId: entity.opId,
-    shapeId: entity.shapeId,
-    type: _OperationTypes.move,
-    x: entity.x,
-    y: entity.y,
-  );
+  factory MoveShapeOperationDto.fromEntity(MoveShapeOperation entity) =>
+      MoveShapeOperationDto(
+        opId: entity.opId,
+        shapeId: entity.shapeId,
+        type: _OperationTypes.move,
+        x: entity.x,
+        y: entity.y,
+      );
 
   @override
-  MoveOperation toEntity() =>
-      MoveOperation(opId: opId, shapeId: shapeId, x: x, y: y);
+  MoveShapeOperation toEntity() =>
+      MoveShapeOperation(opId: opId, shapeId: shapeId, x: x, y: y);
 
   @override
   Map<String, dynamic> toJson() => {...super.toJson(), 'x': x, 'y': y};
 }
 
-class ResizeOperationDto extends OperationDto {
-  const ResizeOperationDto({
+class ResizeShapeOperationDto extends OperationDto {
+  const ResizeShapeOperationDto({
     required super.opId,
     required super.shapeId,
     required super.type,
@@ -142,8 +144,8 @@ class ResizeOperationDto extends OperationDto {
   final double width;
   final double height;
 
-  factory ResizeOperationDto.fromJson(Map<String, dynamic> json) {
-    return ResizeOperationDto(
+  factory ResizeShapeOperationDto.fromJson(Map<String, dynamic> json) {
+    return ResizeShapeOperationDto(
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
@@ -154,8 +156,8 @@ class ResizeOperationDto extends OperationDto {
     );
   }
 
-  factory ResizeOperationDto.fromEntity(ResizeOperation entity) =>
-      ResizeOperationDto(
+  factory ResizeShapeOperationDto.fromEntity(ResizeShapeOperation entity) =>
+      ResizeShapeOperationDto(
         opId: entity.opId,
         shapeId: entity.shapeId,
         type: _OperationTypes.resize,
@@ -166,7 +168,7 @@ class ResizeOperationDto extends OperationDto {
       );
 
   @override
-  ResizeOperation toEntity() => ResizeOperation(
+  ResizeShapeOperation toEntity() => ResizeShapeOperation(
     opId: opId,
     shapeId: shapeId,
     x: x,
@@ -185,8 +187,8 @@ class ResizeOperationDto extends OperationDto {
   };
 }
 
-class CreateOperationDto extends OperationDto {
-  const CreateOperationDto({
+class CreateShapeOperationDto extends OperationDto {
+  const CreateShapeOperationDto({
     required super.opId,
     required super.shapeId,
     required super.type,
@@ -201,8 +203,8 @@ class CreateOperationDto extends OperationDto {
   final double x;
   final double y;
 
-  factory CreateOperationDto.fromJson(Map<String, dynamic> json) {
-    return CreateOperationDto(
+  factory CreateShapeOperationDto.fromJson(Map<String, dynamic> json) {
+    return CreateShapeOperationDto(
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
@@ -213,8 +215,8 @@ class CreateOperationDto extends OperationDto {
     );
   }
 
-  factory CreateOperationDto.fromEntity(CreateOperation entity) =>
-      CreateOperationDto(
+  factory CreateShapeOperationDto.fromEntity(CreateShapeOperation entity) =>
+      CreateShapeOperationDto(
         opId: entity.opId,
         shapeId: entity.shapeId,
         type: _OperationTypes.create,
@@ -225,7 +227,7 @@ class CreateOperationDto extends OperationDto {
       );
 
   @override
-  CreateOperation toEntity() => CreateOperation(
+  CreateShapeOperation toEntity() => CreateShapeOperation(
     opId: opId,
     shapeId: shapeId,
     color: color,
@@ -244,34 +246,35 @@ class CreateOperationDto extends OperationDto {
   };
 }
 
-class DeleteOperationDto extends OperationDto {
-  const DeleteOperationDto({
+class DeleteShapeOperationDto extends OperationDto {
+  const DeleteShapeOperationDto({
     required super.opId,
     required super.shapeId,
     required super.type,
   });
 
-  factory DeleteOperationDto.fromJson(Map<String, dynamic> json) {
-    return DeleteOperationDto(
+  factory DeleteShapeOperationDto.fromJson(Map<String, dynamic> json) {
+    return DeleteShapeOperationDto(
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
     );
   }
 
-  factory DeleteOperationDto.fromEntity(DeleteOperation entity) =>
-      DeleteOperationDto(
+  factory DeleteShapeOperationDto.fromEntity(DeleteShapeOperation entity) =>
+      DeleteShapeOperationDto(
         opId: entity.opId,
         shapeId: entity.shapeId,
         type: _OperationTypes.delete,
       );
 
   @override
-  DeleteOperation toEntity() => DeleteOperation(opId: opId, shapeId: shapeId);
+  DeleteShapeOperation toEntity() =>
+      DeleteShapeOperation(opId: opId, shapeId: shapeId);
 }
 
-class TextOperationDto extends OperationDto {
-  const TextOperationDto({
+class TextShapeOperationDto extends OperationDto {
+  const TextShapeOperationDto({
     required super.opId,
     required super.shapeId,
     required super.type,
@@ -280,8 +283,8 @@ class TextOperationDto extends OperationDto {
 
   final String text;
 
-  factory TextOperationDto.fromJson(Map<String, dynamic> json) {
-    return TextOperationDto(
+  factory TextShapeOperationDto.fromJson(Map<String, dynamic> json) {
+    return TextShapeOperationDto(
       opId: json['op_id'] as String,
       shapeId: json['shape_id'] as String,
       type: json['operation_type'] as String,
@@ -289,16 +292,17 @@ class TextOperationDto extends OperationDto {
     );
   }
 
-  factory TextOperationDto.fromEntity(TextOperation entity) => TextOperationDto(
-    opId: entity.opId,
-    shapeId: entity.shapeId,
-    type: _OperationTypes.text,
-    text: entity.text,
-  );
+  factory TextShapeOperationDto.fromEntity(TextShapeOperation entity) =>
+      TextShapeOperationDto(
+        opId: entity.opId,
+        shapeId: entity.shapeId,
+        type: _OperationTypes.text,
+        text: entity.text,
+      );
 
   @override
-  TextOperation toEntity() =>
-      TextOperation(opId: opId, shapeId: shapeId, text: text);
+  TextShapeOperation toEntity() =>
+      TextShapeOperation(opId: opId, shapeId: shapeId, text: text);
 
   @override
   Map<String, dynamic> toJson() => {...super.toJson(), 'text': text};
@@ -487,7 +491,7 @@ class UpdateConnectingPreviewOperationDto extends OperationDto {
   }
 
   factory UpdateConnectingPreviewOperationDto.fromEntity(
-    UpdateConnectingPreviewDomainOperation entity,
+    UpdateConnectingPreviewOperation entity,
   ) => UpdateConnectingPreviewOperationDto(
     opId: entity.opId,
     shapeId: entity.shapeId,
@@ -498,8 +502,8 @@ class UpdateConnectingPreviewOperationDto extends OperationDto {
   );
 
   @override
-  UpdateConnectingPreviewDomainOperation toEntity() =>
-      UpdateConnectingPreviewDomainOperation(
+  UpdateConnectingPreviewOperation toEntity() =>
+      UpdateConnectingPreviewOperation(
         opId: opId,
         shapeId: shapeId,
         sourceAnchor: sourceAnchor.toEntity(),
@@ -542,7 +546,7 @@ class MoveConnectorNodeOperationDto extends OperationDto {
   }
 
   factory MoveConnectorNodeOperationDto.fromEntity(
-    MoveConnectorNodeDomainOperation entity,
+    MoveConnectorNodeOperation entity,
   ) => MoveConnectorNodeOperationDto(
     opId: entity.opId,
     shapeId: entity.shapeId,
@@ -553,14 +557,13 @@ class MoveConnectorNodeOperationDto extends OperationDto {
   );
 
   @override
-  MoveConnectorNodeDomainOperation toEntity() =>
-      MoveConnectorNodeDomainOperation(
-        opId: opId,
-        shapeId: shapeId,
-        nodeIndex: nodeIndex,
-        x: x,
-        y: y,
-      );
+  MoveConnectorNodeOperation toEntity() => MoveConnectorNodeOperation(
+    opId: opId,
+    shapeId: shapeId,
+    nodeIndex: nodeIndex,
+    x: x,
+    y: y,
+  );
 
   @override
   Map<String, dynamic> toJson() => {

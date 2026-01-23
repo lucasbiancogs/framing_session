@@ -34,30 +34,29 @@ sealed class CanvasOperation extends Equatable {
 
   factory CanvasOperation.fromEntity(Operation entity) {
     return switch (entity) {
-      MoveOperation() => MoveShapeOperation(
+      MoveShapeOperation() => MoveShapeCanvasOperation(
         opId: entity.opId,
         shapeId: entity.shapeId,
         position: Offset(entity.x, entity.y),
       ),
-      ResizeOperation() => ResizeShapeOperation(
+      ResizeShapeOperation() => ResizeShapeCanvasOperation(
         opId: entity.opId,
         shapeId: entity.shapeId,
         handle: ResizeHandle.topLeft,
         bounds: Rect.fromLTWH(entity.x, entity.y, entity.width, entity.height),
       ),
-      CreateOperation() => CreateShapeOperation(
+      CreateShapeOperation() => CreateShapeCanvasOperation(
         opId: entity.opId,
         shapeId: entity.shapeId,
         shapeType: entity.shapeType,
         color: entity.color,
-        x: entity.x,
-        y: entity.y,
+        position: Offset(entity.x, entity.y),
       ),
-      DeleteOperation() => DeleteShapeOperation(
+      DeleteShapeOperation() => DeleteShapeCanvasOperation(
         opId: entity.opId,
         shapeId: entity.shapeId,
       ),
-      TextOperation() => TextShapeOperation(
+      TextShapeOperation() => TextShapeCanvasOperation(
         opId: entity.opId,
         shapeId: entity.shapeId,
         text: entity.text,
@@ -84,14 +83,14 @@ sealed class CanvasOperation extends Equatable {
         connectorId: entity.shapeId,
       ),
       // Ephemeral operations
-      UpdateConnectingPreviewDomainOperation() =>
-        UpdateConnectingPreviewOperation(
+      UpdateConnectingPreviewOperation() =>
+        UpdateConnectingPreviewCanvasOperation(
           opId: entity.opId,
           sourceShapeId: entity.shapeId,
           sourceAnchor: entity.sourceAnchor,
           previewPosition: Offset(entity.x, entity.y),
         ),
-      MoveConnectorNodeDomainOperation() => MoveConnectorNodeOperation(
+      MoveConnectorNodeOperation() => MoveConnectorNodeCanvasOperation(
         opId: entity.opId,
         connectorId: entity.shapeId,
         nodeIndex: entity.nodeIndex,
@@ -107,8 +106,8 @@ sealed class CanvasOperation extends Equatable {
 }
 
 /// Move a shape to an absolute position.
-class MoveShapeOperation extends CanvasOperation {
-  const MoveShapeOperation({
+class MoveShapeCanvasOperation extends CanvasOperation {
+  const MoveShapeCanvasOperation({
     required super.opId,
     required super.shapeId,
     required this.position,
@@ -118,7 +117,7 @@ class MoveShapeOperation extends CanvasOperation {
   final Offset position;
 
   @override
-  Operation toEntity() => MoveOperation(
+  Operation toEntity() => MoveShapeOperation(
     opId: opId,
     shapeId: shapeId,
     x: position.dx,
@@ -130,8 +129,8 @@ class MoveShapeOperation extends CanvasOperation {
 }
 
 /// Resize a shape to absolute bounds.
-class ResizeShapeOperation extends CanvasOperation {
-  const ResizeShapeOperation({
+class ResizeShapeCanvasOperation extends CanvasOperation {
+  const ResizeShapeCanvasOperation({
     required super.opId,
     required super.shapeId,
     required this.handle,
@@ -145,7 +144,7 @@ class ResizeShapeOperation extends CanvasOperation {
   final Rect bounds;
 
   @override
-  Operation toEntity() => ResizeOperation(
+  Operation toEntity() => ResizeShapeOperation(
     opId: opId,
     shapeId: shapeId,
     x: bounds.left,
@@ -159,46 +158,47 @@ class ResizeShapeOperation extends CanvasOperation {
 }
 
 /// Create a new shape.
-class CreateShapeOperation extends CanvasOperation {
-  const CreateShapeOperation({
+class CreateShapeCanvasOperation extends CanvasOperation {
+  const CreateShapeCanvasOperation({
     required super.opId,
     required super.shapeId,
     required this.shapeType,
     required this.color,
-    required this.x,
-    required this.y,
+    required this.position,
   });
 
-  final double x;
-  final double y;
+  final Offset position;
   final String color;
   final ShapeType shapeType;
 
   @override
-  Operation toEntity() => CreateOperation(
+  Operation toEntity() => CreateShapeOperation(
     opId: opId,
     shapeId: shapeId,
     color: color,
-    x: x,
-    y: y,
+    x: position.dx,
+    y: position.dy,
     shapeType: shapeType,
   );
 
   @override
-  List<Object?> get props => [...super.props, x, y, shapeType, color];
+  List<Object?> get props => [...super.props, position, shapeType, color];
 }
 
 /// Delete a shape.
-class DeleteShapeOperation extends CanvasOperation {
-  const DeleteShapeOperation({required super.opId, required super.shapeId});
+class DeleteShapeCanvasOperation extends CanvasOperation {
+  const DeleteShapeCanvasOperation({
+    required super.opId,
+    required super.shapeId,
+  });
 
   @override
-  Operation toEntity() => DeleteOperation(opId: opId, shapeId: shapeId);
+  Operation toEntity() => DeleteShapeOperation(opId: opId, shapeId: shapeId);
 }
 
 /// Update a shape's text content.
-class TextShapeOperation extends CanvasOperation {
-  const TextShapeOperation({
+class TextShapeCanvasOperation extends CanvasOperation {
+  const TextShapeCanvasOperation({
     required super.opId,
     required super.shapeId,
     required this.text,
@@ -209,7 +209,7 @@ class TextShapeOperation extends CanvasOperation {
 
   @override
   Operation toEntity() =>
-      TextOperation(opId: opId, shapeId: shapeId, text: text);
+      TextShapeOperation(opId: opId, shapeId: shapeId, text: text);
 
   @override
   List<Object?> get props => [...super.props, text];
@@ -311,8 +311,8 @@ class DeleteConnectorCanvasOperation extends CanvasOperation {
 /// Update the connecting preview position (ephemeral, not persisted).
 ///
 /// This shows other users where a connector is being drawn to.
-class UpdateConnectingPreviewOperation extends CanvasOperation {
-  const UpdateConnectingPreviewOperation({
+class UpdateConnectingPreviewCanvasOperation extends CanvasOperation {
+  const UpdateConnectingPreviewCanvasOperation({
     required super.opId,
     required this.sourceShapeId,
     required this.sourceAnchor,
@@ -324,7 +324,7 @@ class UpdateConnectingPreviewOperation extends CanvasOperation {
   final Offset previewPosition;
 
   @override
-  Operation toEntity() => UpdateConnectingPreviewDomainOperation(
+  Operation toEntity() => UpdateConnectingPreviewOperation(
     opId: opId,
     shapeId: sourceShapeId,
     sourceAnchor: sourceAnchor,
@@ -345,8 +345,8 @@ class UpdateConnectingPreviewOperation extends CanvasOperation {
 ///
 /// This shows other users the intermediate position while dragging a node.
 /// The final position is persisted via [UpdateConnectorWaypointsCanvasOperation].
-class MoveConnectorNodeOperation extends CanvasOperation {
-  const MoveConnectorNodeOperation({
+class MoveConnectorNodeCanvasOperation extends CanvasOperation {
+  const MoveConnectorNodeCanvasOperation({
     required super.opId,
     required this.connectorId,
     required this.nodeIndex,
@@ -358,7 +358,7 @@ class MoveConnectorNodeOperation extends CanvasOperation {
   final Offset position;
 
   @override
-  Operation toEntity() => MoveConnectorNodeDomainOperation(
+  Operation toEntity() => MoveConnectorNodeOperation(
     opId: opId,
     shapeId: connectorId,
     nodeIndex: nodeIndex,

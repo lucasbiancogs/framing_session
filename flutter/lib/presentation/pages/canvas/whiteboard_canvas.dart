@@ -282,13 +282,13 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   }
 
   void _handlePan(Offset delta, CanvasLoaded state) {
-    final newPanOffset = state.panOffset - delta;
+    final newPanOffset = state.panOffset - delta * vm.sensitivity;
     vm.setPanOffset(newPanOffset);
   }
 
   void _handleScale(Offset focalPoint, double scale, CanvasLoaded state) {
     // Dampen the scale change: reduce how much scale deviates from 1.0
-    final dampedScale = 1.0 + (scale - 1.0) / vm.zoomDimifier;
+    final dampedScale = 1.0 + (scale - 1.0) * vm.zoomSensitivity;
     final newZoom = (state.zoom * dampedScale).clamp(vm.zoomMin, vm.zoomMax);
 
     // Skip if zoom hasn't actually changed (idempotent at limits)
@@ -308,7 +308,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // Handle connecting mode preview
     if (state.isConnecting) {
-      final operation = UpdateConnectingPreviewOperation(
+      final operation = UpdateConnectingPreviewCanvasOperation(
         opId: const Uuid().v4(),
         sourceShapeId: state.connectingFromShapeId!,
         sourceAnchor: state.connectingFromAnchor!,
@@ -330,7 +330,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // Handle connector node dragging
     if (_connectorInteractionState != null) {
-      final operation = MoveConnectorNodeOperation(
+      final operation = MoveConnectorNodeCanvasOperation(
         opId: const Uuid().v4(),
         connectorId: _connectorInteractionState!.connectorId,
         nodeIndex: _connectorInteractionState!.nodeIndex,
@@ -408,13 +408,12 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     if (shapeType == null) return;
 
-    final operation = CreateShapeOperation(
+    final operation = CreateShapeCanvasOperation(
       opId: const Uuid().v4(),
       shapeId: const Uuid().v4(),
       shapeType: shapeType,
       color: state.currentColor,
-      x: position.dx,
-      y: position.dy,
+      position: position,
     );
 
     // Create shape at position
@@ -482,7 +481,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
           contentPadding: EdgeInsets.all(8),
         ),
         onChanged: (text) {
-          final operation = TextShapeOperation(
+          final operation = TextShapeCanvasOperation(
             opId: const Uuid().v4(),
             shapeId: shape.id,
             text: text,
