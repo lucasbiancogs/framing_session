@@ -108,7 +108,7 @@ class CanvasPage extends ConsumerWidget {
                         opId: const Uuid().v4(),
                         connectorId: state.selectedConnectorId!,
                       );
-                      vm.applyOperation(operation);
+                      vm.applyOperation(operation, persist: true);
                       collaborativeVm.broadcastOperation(operation);
                       return;
                     }
@@ -122,7 +122,7 @@ class CanvasPage extends ConsumerWidget {
                       shapeId: shapeId,
                     );
 
-                    vm.applyOperation(operation);
+                    vm.applyOperation(operation, persist: true);
                     collaborativeVm.broadcastOperation(operation);
                   },
                 ),
@@ -236,12 +236,6 @@ class _ToolBar extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _ToolButton(
-                icon: Icons.near_me,
-                label: 'Select',
-                isSelected: currentTool == CanvasTool.select,
-                onTap: () => vm.setTool(CanvasTool.select),
-              ),
               _ToolButton(
                 icon: Icons.crop_square,
                 label: 'Rectangle',

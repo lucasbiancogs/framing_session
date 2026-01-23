@@ -30,7 +30,10 @@ final canvasVM = StateNotifierProvider.autoDispose<CanvasVM, CanvasState>(
 );
 
 /// Available tools for the canvas.
-enum CanvasTool { select, rectangle, circle, triangle, text }
+enum CanvasTool { rectangle, circle, triangle, text }
+
+const double _zoomMin = 0.5;
+const double _zoomMax = 4.0;
 
 class CanvasVM extends StateNotifier<CanvasState> {
   CanvasVM(this._shapeServices, this._sessionId)
@@ -43,6 +46,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   final double gridSize = 20.0;
   final double initialShapeSize = 150.0;
+  final double zoomDimifier = 4;
+  final double zoomMin = _zoomMin;
+  final double zoomMax = _zoomMax;
 
   /// Set of applied operation IDs (for deduplication).
   final Set<String> _appliedOpIds = {};
@@ -139,25 +145,17 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void selectShape(String? shapeId) {
     if (state is! CanvasLoaded) return;
 
+    if (shapeId == _loadedState.selectedShapeId) return;
+
     if (shapeId == null) {
       // Clear selection
-      state = _loadedState.copyWith(clearSelection: true);
-    } else {
-      // Select shape and clear connector selection
-      state = CanvasLoaded(
-        shapes: _loadedState.shapes,
-        connectors: _loadedState.connectors,
-        selectedShapeId: shapeId,
-        selectedConnectorId: null, // Clear connector selection
-        isEditingText: false,
-        panOffset: _loadedState.panOffset,
-        zoom: _loadedState.zoom,
-        currentTool: _loadedState.currentTool,
-        currentColor: _loadedState.currentColor,
-        snapToGrid: _loadedState.snapToGrid,
-        connectingMode: _loadedState.connectingMode,
-      );
+      state = _loadedState.copyWith(clearSelections: true);
+      return;
     }
+
+    state = _loadedState
+        .copyWith(clearSelections: true)
+        .copyWith(selectedShapeId: shapeId);
   }
 
   /// Change the current tool.
@@ -178,9 +176,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void setZoom(double zoom) {
     if (state is! CanvasLoaded) return;
 
-    // Clamp zoom between 25% and 400%
-    final clampedZoom = zoom.clamp(0.25, 4.0);
-    state = _loadedState.copyWith(zoom: clampedZoom);
+    state = _loadedState.copyWith(zoom: zoom);
   }
 
   /// Set the current color for new shapes.
@@ -211,7 +207,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void stopTextEdit() {
     if (state is! CanvasLoaded) return;
 
-    state = _loadedState.copyWith(isEditingText: false);
+    // state = _loadedState.copyWith(isEditingText: false);
   }
 
   // ---------------------------------------------------------------------------
@@ -229,19 +225,36 @@ class CanvasVM extends StateNotifier<CanvasState> {
   ///
   /// This is the single entry point for all shape and connector mutations.
   /// Operations are applied immutably — shapes/connectors are never mutated in place.
-  void applyOperation(CanvasOperation operation) {
+  ///
+  /// [persist] controls whether the operation should be persisted to the database.
+  /// - `true` for local operations (user-initiated)
+  /// - `false` for remote operations (received from other clients)
+  void applyOperation(CanvasOperation operation, {bool persist = false}) {
     if (state is! CanvasLoaded) return;
 
     // Deduplicate operations
     if (_appliedOpIds.contains(operation.opId)) return;
     _appliedOpIds.add(operation.opId);
 
-    // Handle connector operations separately
-    if (operation is CreateConnectorCanvasOperation ||
-        operation is UpdateConnectorWaypointsCanvasOperation ||
-        operation is DeleteConnectorCanvasOperation) {
-      _applyConnectorOperation(operation);
-      return;
+    switch (operation) {
+      case CreateConnectorCanvasOperation():
+        _applyCreateConnector(operation, persist: persist);
+        return;
+      case UpdateConnectorWaypointsCanvasOperation():
+        _applyUpdateConnectorWaypoints(operation, persist: persist);
+        return;
+      case DeleteConnectorCanvasOperation():
+        _applyDeleteConnector(operation, persist: persist);
+        return;
+      // Ephemeral operations (never persisted)
+      case UpdateConnectingPreviewOperation():
+        _applyUpdateConnectingPreview(operation);
+        return;
+      case MoveConnectorNodeOperation():
+        _applyMoveConnectorNode(operation);
+        return;
+      default:
+        break;
     }
 
     final newShapes = switch (operation) {
@@ -258,19 +271,19 @@ class CanvasVM extends StateNotifier<CanvasState> {
         text,
       ),
       CreateShapeOperation() => _applyCreate(operation),
-      DeleteShapeOperation(:final shapeId) => _applyDelete(shapeId),
+      DeleteShapeOperation(:final shapeId) => _applyDelete(
+        shapeId,
+        persist: persist,
+      ),
       _ => _loadedState.shapes,
     };
 
     state = _loadedState.copyWith(shapes: newShapes);
 
-    // Rebuild connectors when shapes move/resize
-    if (operation is MoveShapeOperation || operation is ResizeShapeOperation) {
-      _rebuildConnectors();
+    // Schedule debounced persistence for update operations (only for local)
+    if (persist) {
+      _scheduleDebouncedPersist(operation);
     }
-
-    // Schedule debounced persistence for update operations
-    _scheduleDebouncedPersist(operation);
   }
 
   CanvasOperation? getOperationByIntent({
@@ -474,6 +487,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
         ? _snapOffset(position)
         : position;
 
+    _rebuildConnectors();
+
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
 
@@ -483,6 +498,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   List<CanvasShape> _applyResize(String shapeId, Rect bounds) {
     final snappedBounds = _loadedState.snapToGrid ? _snapRect(bounds) : bounds;
+
+    _rebuildConnectors();
 
     return _loadedState.shapes.map((shape) {
       if (shape.id != shapeId) return shape;
@@ -522,7 +539,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   /// Delete the currently selected shape.
   ///
   /// Also deletes any connectors that reference this shape.
-  List<CanvasShape> _applyDelete(String shapeId) {
+  List<CanvasShape> _applyDelete(String shapeId, {bool persist = false}) {
     if (state is! CanvasLoaded) return _loadedState.shapes;
 
     final newShapes = _loadedState.shapes
@@ -546,9 +563,11 @@ class CanvasVM extends StateNotifier<CanvasState> {
         )
         .toList();
 
-    // Delete connectors from database
-    for (final connector in connectorsToDelete) {
-      _shapeServices.deleteConnector(connector.id);
+    // Delete connectors from database (only for local operations)
+    if (persist) {
+      for (final connector in connectorsToDelete) {
+        _shapeServices.deleteConnector(connector.id);
+      }
     }
 
     // Check if selected connector was deleted
@@ -583,7 +602,6 @@ class CanvasVM extends StateNotifier<CanvasState> {
       CanvasTool.circle => ShapeType.circle,
       CanvasTool.triangle => ShapeType.triangle,
       CanvasTool.text => ShapeType.text,
-      CanvasTool.select => null,
     };
   }
 
@@ -604,13 +622,18 @@ class CanvasVM extends StateNotifier<CanvasState> {
     );
   }
 
-  /// Update the connecting preview position.
-  void updateConnectingPreview(Offset position) {
-    if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
+  /// Apply an update connecting preview operation (ephemeral, not persisted).
+  void _applyUpdateConnectingPreview(
+    UpdateConnectingPreviewOperation operation,
+  ) {
+    if (state is! CanvasLoaded) return;
 
+    // Start or update connecting mode based on operation
     state = _loadedState.copyWith(
-      connectingMode: _loadedState.connectingMode!.copyWith(
-        previewEnd: position,
+      connectingMode: ConnectingModeState(
+        fromShapeId: operation.sourceShapeId,
+        fromAnchor: operation.sourceAnchor,
+        previewEnd: operation.previewPosition,
       ),
     );
   }
@@ -619,22 +642,27 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void cancelConnecting() {
     if (state is! CanvasLoaded) return;
 
-    state = _loadedState.copyWith(clearConnecting: true);
+    state = _loadedState.copyWith(clearSelections: true);
   }
 
   /// Complete connecting to a target shape anchor.
-  void completeConnecting(String targetShapeId, AnchorPoint targetAnchor) {
-    if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
+  ///
+  /// Returns the created operation for broadcasting, or null if invalid.
+  CreateConnectorCanvasOperation? completeConnecting(
+    String targetShapeId,
+    AnchorPoint targetAnchor,
+  ) {
+    if (state is! CanvasLoaded || !_loadedState.isConnecting) return null;
 
     final sourceShapeId = _loadedState.connectingFromShapeId;
     final sourceAnchor = _loadedState.connectingFromAnchor;
 
-    if (sourceShapeId == null || sourceAnchor == null) return;
+    if (sourceShapeId == null || sourceAnchor == null) return null;
 
     // Don't allow self-connections
     if (sourceShapeId == targetShapeId) {
       cancelConnecting();
-      return;
+      return null;
     }
 
     final operation = CreateConnectorCanvasOperation(
@@ -648,19 +676,24 @@ class CanvasVM extends StateNotifier<CanvasState> {
       color: _loadedState.currentColor,
     );
 
-    applyOperation(operation);
+    applyOperation(operation, persist: true);
 
-    state = _loadedState.copyWith(clearConnecting: true);
+    state = _loadedState.copyWith(clearSelections: true);
+
+    return operation;
   }
 
   /// Complete connecting by creating a new shape and connector.
-  void completeConnectingWithNewShape(Offset position) {
-    if (state is! CanvasLoaded || !_loadedState.isConnecting) return;
+  ///
+  /// Returns both operations for broadcasting, or null if invalid.
+  ({CreateShapeOperation shape, CreateConnectorCanvasOperation connector})?
+  completeConnectingWithNewShape(Offset position) {
+    if (state is! CanvasLoaded || !_loadedState.isConnecting) return null;
 
     final sourceShapeId = _loadedState.connectingFromShapeId;
     final sourceAnchor = _loadedState.connectingFromAnchor;
 
-    if (sourceShapeId == null || sourceAnchor == null) return;
+    if (sourceShapeId == null || sourceAnchor == null) return null;
 
     // Determine the target anchor based on source anchor (opposite side)
     final targetAnchor = _getOppositeAnchor(sourceAnchor);
@@ -676,7 +709,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
       y: position.dy - initialShapeSize / 2,
     );
 
-    applyOperation(shapeOperation);
+    applyOperation(shapeOperation, persist: true);
 
     // Create connector
     final connectorOperation = CreateConnectorCanvasOperation(
@@ -690,9 +723,11 @@ class CanvasVM extends StateNotifier<CanvasState> {
       color: _loadedState.currentColor,
     );
 
-    applyOperation(connectorOperation);
+    applyOperation(connectorOperation, persist: true);
 
-    state = _loadedState.copyWith(clearConnecting: true);
+    state = _loadedState.copyWith(clearSelections: true);
+
+    return (shape: shapeOperation, connector: connectorOperation);
   }
 
   /// Get the opposite anchor point.
@@ -742,7 +777,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
       connectorId: connectorId,
     );
 
-    applyOperation(operation);
+    applyOperation(operation, persist: true);
   }
 
   /// Hit test connectors at a canvas position.
@@ -782,19 +817,15 @@ class CanvasVM extends StateNotifier<CanvasState> {
     return connector.nodes.indexOf(node);
   }
 
-  /// Move a connector node to a new position (during drag).
+  /// Apply a move connector node operation (ephemeral, not persisted).
   ///
   /// This only updates the node position without optimization.
-  /// Call [finalizeConnectorNodeMove] on release to optimize nodes.
-  void moveConnectorNode(
-    String connectorId,
-    int nodeIndex,
-    Offset newPosition,
-  ) {
+  /// Call [finalizeConnectorNodeMove] on release to persist waypoints.
+  void _applyMoveConnectorNode(MoveConnectorNodeOperation operation) {
     if (state is! CanvasLoaded) return;
 
     final connectorIndex = _loadedState.connectors.indexWhere(
-      (c) => c.id == connectorId,
+      (c) => c.id == operation.connectorId,
     );
     if (connectorIndex == -1) return;
 
@@ -802,19 +833,19 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     // Apply snap-to-grid if enabled
     final snappedPosition = _loadedState.snapToGrid
-        ? _snapOffset(newPosition)
-        : newPosition;
+        ? _snapOffset(operation.position)
+        : operation.position;
 
     // Just update the node position (no optimization during drag)
     final newNodes = List<ConnectorNode>.from(connector.nodes);
-    final node = newNodes[nodeIndex];
+    final node = newNodes[operation.nodeIndex];
 
     // Update position based on node type
     if (node is WaypointNode) {
-      newNodes[nodeIndex] = WaypointNode(position: snappedPosition);
+      newNodes[operation.nodeIndex] = WaypointNode(position: snappedPosition);
     } else if (node is SegmentMidNode) {
       // During drag, keep it as SegmentMidNode (will be converted on finalize)
-      newNodes[nodeIndex] = SegmentMidNode(position: snappedPosition);
+      newNodes[operation.nodeIndex] = SegmentMidNode(position: snappedPosition);
     }
 
     // Build path: skip SegmentMidNodes EXCEPT the one being dragged
@@ -822,7 +853,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
     for (int i = 0; i < newNodes.length; i++) {
       final n = newNodes[i];
       // Include: anchors, waypoints, and the specific node being dragged
-      if (n is! SegmentMidNode || i == nodeIndex) {
+      if (n is! SegmentMidNode || i == operation.nodeIndex) {
         newPath.add(n.position);
       }
     }
@@ -840,23 +871,25 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
   /// Finalize connector node movement (on release).
   ///
-  /// This runs the router's optimization logic:
-  /// - Converts SegmentMidNode to WaypointNode
-  /// - Creates new SegmentMidNodes on adjacent segments
-  /// - Persists waypoints to database
-  /// - In the future: collapses unnecessary nodes
-  void finalizeConnectorNodeMove(String connectorId, int nodeIndex) {
-    if (state is! CanvasLoaded) return;
+  /// This runs the router's optimization logic locally, then creates
+  /// an operation that goes through applyOperation (same as remote).
+  ///
+  /// Returns the operation for broadcasting, or null if invalid.
+  UpdateConnectorWaypointsCanvasOperation? finalizeConnectorNodeMove(
+    String connectorId,
+    int nodeIndex,
+  ) {
+    if (state is! CanvasLoaded) return null;
 
-    final connectorIndex = _loadedState.connectors.indexWhere(
+    final connector = _loadedState.connectors.firstWhere(
       (c) => c.id == connectorId,
+      orElse: () => throw StateError('Connector not found'),
     );
-    if (connectorIndex == -1) return;
 
-    final connector = _loadedState.connectors[connectorIndex];
     final node = connector.nodes[nodeIndex];
 
     // Use router to optimize nodes (convert mid → waypoint, add new mids, etc.)
+    // This is local-only logic - remote operations receive final waypoints
     final optimizedNodes = _router.onMovedWaypoint(
       connector.nodes,
       nodeIndex,
@@ -866,38 +899,17 @@ class CanvasVM extends StateNotifier<CanvasState> {
     // Extract waypoints from nodes (only WaypointNodes, not SegmentMidNodes)
     final waypoints = _extractWaypointsFromNodes(optimizedNodes);
 
-    // Update entity with new waypoints
-    final updatedEntity = Connector(
-      id: connector.entity.id,
-      sessionId: connector.entity.sessionId,
-      sourceShapeId: connector.entity.sourceShapeId,
-      targetShapeId: connector.entity.targetShapeId,
-      sourceAnchor: connector.entity.sourceAnchor,
-      targetAnchor: connector.entity.targetAnchor,
-      arrowType: connector.entity.arrowType,
-      color: connector.entity.color,
+    // Create operation and apply through the standard path
+    final operation = UpdateConnectorWaypointsCanvasOperation(
+      opId: const Uuid().v4(),
+      connectorId: connectorId,
       waypoints: waypoints,
     );
 
-    // Recalculate path
-    final newPath = _router.route(optimizedNodes);
+    // Apply through applyOperation (local operation, persist)
+    applyOperation(operation, persist: true);
 
-    // Update connector with new entity and nodes
-    final updatedConnector = CanvasConnector(
-      entity: updatedEntity,
-      nodes: optimizedNodes,
-      path: newPath,
-    );
-
-    final updatedConnectors = List<CanvasConnector>.from(
-      _loadedState.connectors,
-    );
-    updatedConnectors[connectorIndex] = updatedConnector;
-
-    state = _loadedState.copyWith(connectors: updatedConnectors);
-
-    // Persist to database
-    _shapeServices.updateConnector(updatedEntity);
+    return operation;
   }
 
   /// Extract waypoints from nodes (only WaypointNodes, indexed by position).
@@ -962,25 +974,10 @@ class CanvasVM extends StateNotifier<CanvasState> {
     state = _loadedState.copyWith(connectors: updatedConnectors);
   }
 
-  // ---------------------------------------------------------------------------
-  // Extended applyOperation to handle connector operations
-  // ---------------------------------------------------------------------------
-
-  /// Apply a connector operation.
-  void _applyConnectorOperation(CanvasOperation operation) {
-    switch (operation) {
-      case CreateConnectorCanvasOperation():
-        _applyCreateConnector(operation);
-      case UpdateConnectorWaypointsCanvasOperation():
-        _applyUpdateConnectorWaypoints(operation);
-      case DeleteConnectorCanvasOperation():
-        _applyDeleteConnector(operation);
-      default:
-        break;
-    }
-  }
-
-  void _applyCreateConnector(CreateConnectorCanvasOperation operation) {
+  void _applyCreateConnector(
+    CreateConnectorCanvasOperation operation, {
+    bool persist = false,
+  }) {
     if (state is! CanvasLoaded) return;
 
     final shapesById = _loadedState.shapesById;
@@ -1011,16 +1008,19 @@ class CanvasVM extends StateNotifier<CanvasState> {
       connectors: [..._loadedState.connectors, canvasConnector],
     );
 
-    // Persist to database
-    _shapeServices.createConnector(connector);
+    if (persist) {
+      _shapeServices.createConnector(connector);
+    }
   }
 
   void _applyUpdateConnectorWaypoints(
-    UpdateConnectorWaypointsCanvasOperation operation,
-  ) {
+    UpdateConnectorWaypointsCanvasOperation operation, {
+    bool persist = false,
+  }) {
     if (state is! CanvasLoaded) return;
 
     final shapesById = _loadedState.shapesById;
+    Connector? entityToUpdate;
 
     final updatedConnectors = _loadedState.connectors.map((connector) {
       if (connector.id != operation.connectorId) return connector;
@@ -1042,6 +1042,8 @@ class CanvasVM extends StateNotifier<CanvasState> {
         waypoints: operation.waypoints,
       );
 
+      entityToUpdate = updatedEntity;
+
       // Rebuild connector with new waypoints
       return _buildCanvasConnector(
         entity: updatedEntity,
@@ -1051,9 +1053,16 @@ class CanvasVM extends StateNotifier<CanvasState> {
     }).toList();
 
     state = _loadedState.copyWith(connectors: updatedConnectors);
+
+    if (persist && entityToUpdate != null) {
+      _shapeServices.updateConnector(entityToUpdate!);
+    }
   }
 
-  void _applyDeleteConnector(DeleteConnectorCanvasOperation operation) {
+  void _applyDeleteConnector(
+    DeleteConnectorCanvasOperation operation, {
+    bool persist = false,
+  }) {
     if (state is! CanvasLoaded) return;
 
     final newConnectors = _loadedState.connectors
@@ -1068,8 +1077,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
           : _loadedState.selectedConnectorId,
     );
 
-    // Persist to database
-    _shapeServices.deleteConnector(operation.connectorId);
+    if (persist) {
+      _shapeServices.deleteConnector(operation.connectorId);
+    }
   }
 }
 
@@ -1125,12 +1135,12 @@ class CanvasLoaded extends CanvasState {
     this.selectedConnectorId,
     this.isEditingText = false,
     this.panOffset = Offset.zero,
-    this.zoom = 1.0,
-    this.currentTool = CanvasTool.select,
-    this.currentColor = '#4ED09A',
+    double zoom = 1.0,
+    this.currentTool = CanvasTool.rectangle,
+    this.currentColor = '#19191f',
     this.snapToGrid = true,
     this.connectingMode,
-  });
+  }) : _zoom = zoom;
 
   /// All shapes in the session.
   final List<CanvasShape> shapes;
@@ -1153,7 +1163,9 @@ class CanvasLoaded extends CanvasState {
   final Offset panOffset;
 
   /// Current zoom level (1.0 = 100%).
-  final double zoom;
+  final double _zoom;
+
+  double get zoom => _zoom.clamp(_zoomMin, _zoomMax);
 
   /// Currently selected drawing tool.
   final CanvasTool currentTool;
@@ -1225,19 +1237,18 @@ class CanvasLoaded extends CanvasState {
     String? currentColor,
     bool? snapToGrid,
     ConnectingModeState? connectingMode,
-    bool clearSelection = false,
-    bool clearConnecting = false,
+    bool clearSelections = false,
   }) {
     return CanvasLoaded(
       shapes: shapes ?? this.shapes,
       connectors: connectors ?? this.connectors,
-      selectedShapeId: clearSelection
+      selectedShapeId: clearSelections
           ? null
           : (selectedShapeId ?? this.selectedShapeId),
-      selectedConnectorId: clearSelection
+      selectedConnectorId: clearSelections
           ? null
           : (selectedConnectorId ?? this.selectedConnectorId),
-      isEditingText: clearSelection
+      isEditingText: clearSelections
           ? false
           : (isEditingText ?? this.isEditingText),
       panOffset: panOffset ?? this.panOffset,
@@ -1245,7 +1256,7 @@ class CanvasLoaded extends CanvasState {
       currentTool: currentTool ?? this.currentTool,
       currentColor: currentColor ?? this.currentColor,
       snapToGrid: snapToGrid ?? this.snapToGrid,
-      connectingMode: clearConnecting
+      connectingMode: clearSelections
           ? null
           : (connectingMode ?? this.connectingMode),
     );

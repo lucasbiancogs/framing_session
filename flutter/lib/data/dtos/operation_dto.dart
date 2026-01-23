@@ -14,6 +14,9 @@ class _OperationTypes {
   static const String createConnector = 'create_connector';
   static const String updateConnectorWaypoints = 'update_connector_waypoints';
   static const String deleteConnector = 'delete_connector';
+  // Ephemeral operations
+  static const String updateConnectingPreview = 'update_connecting_preview';
+  static const String moveConnectorNode = 'move_connector_node';
 }
 
 sealed class OperationDto {
@@ -44,6 +47,11 @@ sealed class OperationDto {
       _OperationTypes.deleteConnector => DeleteConnectorOperationDto.fromJson(
         json,
       ),
+      // Ephemeral operations
+      _OperationTypes.updateConnectingPreview =>
+        UpdateConnectingPreviewOperationDto.fromJson(json),
+      _OperationTypes.moveConnectorNode =>
+        MoveConnectorNodeOperationDto.fromJson(json),
       _ => throw InconsistencyError.internal('Unknown operation type: $type'),
     };
   }
@@ -63,6 +71,11 @@ sealed class OperationDto {
       DeleteConnectorOperation() => DeleteConnectorOperationDto.fromEntity(
         entity,
       ),
+      // Ephemeral operations
+      UpdateConnectingPreviewDomainOperation() =>
+        UpdateConnectingPreviewOperationDto.fromEntity(entity),
+      MoveConnectorNodeDomainOperation() =>
+        MoveConnectorNodeOperationDto.fromEntity(entity),
     };
   }
 
@@ -370,7 +383,7 @@ class CreateConnectorOperationDto extends OperationDto {
 class UpdateConnectorWaypointsOperationDto extends OperationDto {
   const UpdateConnectorWaypointsOperationDto({
     required super.opId,
-    required super.shapeId, // connector ID
+    required super.shapeId,
     required super.type,
     required this.waypoints,
   });
@@ -383,8 +396,8 @@ class UpdateConnectorWaypointsOperationDto extends OperationDto {
     opId: json['op_id'] as String,
     shapeId: json['shape_id'] as String,
     type: json['operation_type'] as String,
-    waypoints: json['waypoints']
-        ?.map((wp) => WaypointDto.fromJson(wp))
+    waypoints: (json['waypoints'] as List<dynamic>)
+        .map((wp) => WaypointDto.fromJson(wp as Map<String, dynamic>))
         .toList(),
   );
 
@@ -408,7 +421,10 @@ class UpdateConnectorWaypointsOperationDto extends OperationDto {
       );
 
   @override
-  Map<String, dynamic> toJson() => {...super.toJson(), 'waypoints': waypoints};
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'waypoints': waypoints.map((wp) => wp.toJson()).toList(),
+  };
 }
 
 class DeleteConnectorOperationDto extends OperationDto {
@@ -437,4 +453,120 @@ class DeleteConnectorOperationDto extends OperationDto {
   @override
   DeleteConnectorOperation toEntity() =>
       DeleteConnectorOperation(opId: opId, shapeId: shapeId);
+}
+
+// -------------------------------------------------------------------------
+// Ephemeral Operation DTOs (broadcast but not persisted)
+// -------------------------------------------------------------------------
+
+class UpdateConnectingPreviewOperationDto extends OperationDto {
+  const UpdateConnectingPreviewOperationDto({
+    required super.opId,
+    required super.shapeId, // source shape ID
+    required super.type,
+    required this.sourceAnchor,
+    required this.x,
+    required this.y,
+  });
+
+  final AnchorPointDto sourceAnchor;
+  final double x;
+  final double y;
+
+  factory UpdateConnectingPreviewOperationDto.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return UpdateConnectingPreviewOperationDto(
+      opId: json['op_id'] as String,
+      shapeId: json['shape_id'] as String,
+      type: json['operation_type'] as String,
+      sourceAnchor: AnchorPointDto.fromString(json['source_anchor'] as String),
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+    );
+  }
+
+  factory UpdateConnectingPreviewOperationDto.fromEntity(
+    UpdateConnectingPreviewDomainOperation entity,
+  ) => UpdateConnectingPreviewOperationDto(
+    opId: entity.opId,
+    shapeId: entity.shapeId,
+    type: _OperationTypes.updateConnectingPreview,
+    sourceAnchor: AnchorPointDto.fromString(entity.sourceAnchor.name),
+    x: entity.x,
+    y: entity.y,
+  );
+
+  @override
+  UpdateConnectingPreviewDomainOperation toEntity() =>
+      UpdateConnectingPreviewDomainOperation(
+        opId: opId,
+        shapeId: shapeId,
+        sourceAnchor: sourceAnchor.toEntity(),
+        x: x,
+        y: y,
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'source_anchor': sourceAnchor.raw,
+    'x': x,
+    'y': y,
+  };
+}
+
+class MoveConnectorNodeOperationDto extends OperationDto {
+  const MoveConnectorNodeOperationDto({
+    required super.opId,
+    required super.shapeId, // connector ID
+    required super.type,
+    required this.nodeIndex,
+    required this.x,
+    required this.y,
+  });
+
+  final int nodeIndex;
+  final double x;
+  final double y;
+
+  factory MoveConnectorNodeOperationDto.fromJson(Map<String, dynamic> json) {
+    return MoveConnectorNodeOperationDto(
+      opId: json['op_id'] as String,
+      shapeId: json['shape_id'] as String,
+      type: json['operation_type'] as String,
+      nodeIndex: json['node_index'] as int,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+    );
+  }
+
+  factory MoveConnectorNodeOperationDto.fromEntity(
+    MoveConnectorNodeDomainOperation entity,
+  ) => MoveConnectorNodeOperationDto(
+    opId: entity.opId,
+    shapeId: entity.shapeId,
+    type: _OperationTypes.moveConnectorNode,
+    nodeIndex: entity.nodeIndex,
+    x: entity.x,
+    y: entity.y,
+  );
+
+  @override
+  MoveConnectorNodeDomainOperation toEntity() =>
+      MoveConnectorNodeDomainOperation(
+        opId: opId,
+        shapeId: shapeId,
+        nodeIndex: nodeIndex,
+        x: x,
+        y: y,
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'node_index': nodeIndex,
+    'x': x,
+    'y': y,
+  };
 }

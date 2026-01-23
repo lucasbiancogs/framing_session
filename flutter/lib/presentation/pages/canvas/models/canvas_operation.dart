@@ -83,6 +83,20 @@ sealed class CanvasOperation extends Equatable {
         opId: entity.opId,
         connectorId: entity.shapeId,
       ),
+      // Ephemeral operations
+      UpdateConnectingPreviewDomainOperation() =>
+        UpdateConnectingPreviewOperation(
+          opId: entity.opId,
+          sourceShapeId: entity.shapeId,
+          sourceAnchor: entity.sourceAnchor,
+          previewPosition: Offset(entity.x, entity.y),
+        ),
+      MoveConnectorNodeDomainOperation() => MoveConnectorNodeOperation(
+        opId: entity.opId,
+        connectorId: entity.shapeId,
+        nodeIndex: entity.nodeIndex,
+        position: Offset(entity.x, entity.y),
+      ),
     };
   }
 
@@ -288,4 +302,70 @@ class DeleteConnectorCanvasOperation extends CanvasOperation {
 
   @override
   List<Object?> get props => [...super.props, connectorId];
+}
+
+// -------------------------------------------------------------------------
+// Ephemeral Operations (broadcast but not persisted)
+// -------------------------------------------------------------------------
+
+/// Update the connecting preview position (ephemeral, not persisted).
+///
+/// This shows other users where a connector is being drawn to.
+class UpdateConnectingPreviewOperation extends CanvasOperation {
+  const UpdateConnectingPreviewOperation({
+    required super.opId,
+    required this.sourceShapeId,
+    required this.sourceAnchor,
+    required this.previewPosition,
+  }) : super(shapeId: sourceShapeId);
+
+  final String sourceShapeId;
+  final AnchorPoint sourceAnchor;
+  final Offset previewPosition;
+
+  @override
+  Operation toEntity() => UpdateConnectingPreviewDomainOperation(
+    opId: opId,
+    shapeId: sourceShapeId,
+    sourceAnchor: sourceAnchor,
+    x: previewPosition.dx,
+    y: previewPosition.dy,
+  );
+
+  @override
+  List<Object?> get props => [
+    ...super.props,
+    sourceShapeId,
+    sourceAnchor,
+    previewPosition,
+  ];
+}
+
+/// Move a connector node during drag (ephemeral, not persisted).
+///
+/// This shows other users the intermediate position while dragging a node.
+/// The final position is persisted via [UpdateConnectorWaypointsCanvasOperation].
+class MoveConnectorNodeOperation extends CanvasOperation {
+  const MoveConnectorNodeOperation({
+    required super.opId,
+    required this.connectorId,
+    required this.nodeIndex,
+    required this.position,
+  }) : super(shapeId: connectorId);
+
+  final String connectorId;
+  final int nodeIndex;
+  final Offset position;
+
+  @override
+  Operation toEntity() => MoveConnectorNodeDomainOperation(
+    opId: opId,
+    shapeId: connectorId,
+    nodeIndex: nodeIndex,
+    x: position.dx,
+    y: position.dy,
+  );
+
+  @override
+  List<Object?> get props => [...super.props, connectorId, nodeIndex, position];
 }

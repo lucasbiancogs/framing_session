@@ -12,7 +12,6 @@ import 'collaborative_canvas_vm.dart';
 import 'models/edit_intent.dart';
 import 'models/canvas_operation.dart';
 import 'painters/whiteboard_painter.dart';
-import 'models/canvas_shape.dart';
 
 /// The main whiteboard canvas widget.
 ///
@@ -64,6 +63,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     }
 
     return Listener(
+      behavior: HitTestBehavior.opaque,
       onPointerDown: (event) => _handlePointerDown(event.localPosition, state),
       onPointerMove: (event) => _handlePointerMove(event.localPosition, state),
       onPointerUp: (event) => _handlePointerUp(event.localPosition, state),
@@ -72,6 +72,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
           _handlePointerHover(event.localPosition, state),
       onPointerSignal: (event) => _handlePointerSignal(event, state),
       child: GestureDetector(
+        onScaleUpdate: (details) => _handleScaleUpdate(details, state),
         // Double-tap to create shape or edit text
         onDoubleTapDown: (details) =>
             _handleDoubleTap(details.localPosition, state),
@@ -111,6 +112,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
                 size: Size.infinite,
               ),
 
+              // Text editing overlay
               if (collaborativeState is CollaborativeCanvasLoaded)
                 CustomPaint(
                   painter: CursorsPainter(
@@ -120,9 +122,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
                   ),
                 ),
 
-              // Text editing overlay
-              if (state.isEditingText && state.selectedShape != null)
-                _buildTextEditingOverlay(state, state.selectedShape!),
+              if (state.isEditingText && state.selectedShapeId != null)
+                _buildTextEditingOverlay(state),
             ],
           ),
         ),
@@ -231,13 +232,20 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
       final anchor = shape.hitTestAnchor(position);
       if (anchor != null) {
-        vm.completeConnecting(shape.id, anchor);
+        final operation = vm.completeConnecting(shape.id, anchor);
+        if (operation != null) {
+          collaborativeVm.broadcastOperation(operation);
+        }
         return;
       }
     }
 
     // Clicked on empty space — create new shape and connect
-    vm.completeConnectingWithNewShape(position);
+    final operations = vm.completeConnectingWithNewShape(position);
+    if (operations != null) {
+      collaborativeVm.broadcastOperation(operations.shape);
+      collaborativeVm.broadcastOperation(operations.connector);
+    }
   }
 
   void _handlePointerSignal(PointerSignalEvent event, CanvasLoaded state) {
@@ -245,18 +253,52 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     collaborativeVm.broadcastCursor(position);
 
     if (event is PointerScrollEvent) {
-      final newPanOffset = state.panOffset - event.scrollDelta;
-      vm.setPanOffset(newPanOffset);
+      _handlePan(event.scrollDelta, state);
     }
 
     if (event is PointerScaleEvent) {
-      final focalPoint = event.localPosition;
-      final newZoom = state.zoom * event.scale;
-      final canvasPointAtFocal = (focalPoint - state.panOffset) / state.zoom;
-      final newPanOffset = focalPoint - canvasPointAtFocal * newZoom;
-      vm.setZoom(newZoom);
-      vm.setPanOffset(newPanOffset);
+      _handleScale(event.localPosition, event.scale, state);
     }
+  }
+
+  void _handleScaleUpdate(ScaleUpdateDetails details, CanvasLoaded state) {
+    // Ignore scale updates when pointer is down (dragging something)
+    if (_shapeInteractionState != null ||
+        _connectorInteractionState != null ||
+        _panInteractionState != null ||
+        state.isConnecting) {
+      return;
+    }
+
+    // Handle pan from two-finger drag
+    if (details.focalPointDelta != Offset.zero) {
+      _handlePan(-details.focalPointDelta, state);
+    }
+
+    // Handle scale from pinch gesture
+    if (details.scale != 1.0) {
+      _handleScale(details.focalPoint, details.scale, state);
+    }
+  }
+
+  void _handlePan(Offset delta, CanvasLoaded state) {
+    final newPanOffset = state.panOffset - delta;
+    vm.setPanOffset(newPanOffset);
+  }
+
+  void _handleScale(Offset focalPoint, double scale, CanvasLoaded state) {
+    // Dampen the scale change: reduce how much scale deviates from 1.0
+    final dampedScale = 1.0 + (scale - 1.0) / vm.zoomDimifier;
+    final newZoom = (state.zoom * dampedScale).clamp(vm.zoomMin, vm.zoomMax);
+
+    // Skip if zoom hasn't actually changed (idempotent at limits)
+    if (newZoom == state.zoom) return;
+
+    final canvasPointAtFocal = (focalPoint - state.panOffset) / state.zoom;
+    final newPanOffset = focalPoint - canvasPointAtFocal * newZoom;
+
+    vm.setZoom(newZoom);
+    vm.setPanOffset(newPanOffset);
   }
 
   void _handlePointerMove(Offset screenPosition, CanvasLoaded state) {
@@ -266,7 +308,14 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // Handle connecting mode preview
     if (state.isConnecting) {
-      vm.updateConnectingPreview(position);
+      final operation = UpdateConnectingPreviewOperation(
+        opId: const Uuid().v4(),
+        sourceShapeId: state.connectingFromShapeId!,
+        sourceAnchor: state.connectingFromAnchor!,
+        previewPosition: position,
+      );
+      vm.applyOperation(operation, persist: true);
+      collaborativeVm.broadcastOperation(operation);
       return;
     }
 
@@ -281,11 +330,14 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
 
     // Handle connector node dragging
     if (_connectorInteractionState != null) {
-      vm.moveConnectorNode(
-        _connectorInteractionState!.connectorId,
-        _connectorInteractionState!.nodeIndex,
-        position,
+      final operation = MoveConnectorNodeOperation(
+        opId: const Uuid().v4(),
+        connectorId: _connectorInteractionState!.connectorId,
+        nodeIndex: _connectorInteractionState!.nodeIndex,
+        position: position,
       );
+      vm.applyOperation(operation, persist: true);
+      collaborativeVm.broadcastOperation(operation);
       return;
     }
 
@@ -305,7 +357,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     );
 
     if (operation != null) {
-      vm.applyOperation(operation);
+      vm.applyOperation(operation, persist: true);
       collaborativeVm.broadcastOperation(operation);
     }
   }
@@ -313,10 +365,13 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   void _handlePointerUp(Offset screenPosition, CanvasLoaded state) {
     // Finalize connector node movement if dragging
     if (_connectorInteractionState != null) {
-      vm.finalizeConnectorNodeMove(
+      final operation = vm.finalizeConnectorNodeMove(
         _connectorInteractionState!.connectorId,
         _connectorInteractionState!.nodeIndex,
       );
+      if (operation != null) {
+        collaborativeVm.broadcastOperation(operation);
+      }
     }
 
     _shapeInteractionState = null;
@@ -346,9 +401,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
       return;
     }
 
-    // If not on a shape, create a new shape (if tool is not select)
+    // If not on a shape, create a new shape
     final tool = state.currentTool;
-    if (tool == CanvasTool.select) return;
 
     final shapeType = vm.toolToShapeType(tool);
 
@@ -364,7 +418,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
     );
 
     // Create shape at position
-    vm.applyOperation(operation);
+    vm.applyOperation(operation, persist: true);
     collaborativeVm.broadcastOperation(operation);
   }
 
@@ -400,7 +454,9 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
   // Text Editing Overlay
   // ---------------------------------------------------------------------------
 
-  Widget _buildTextEditingOverlay(CanvasLoaded state, CanvasShape shape) {
+  Widget _buildTextEditingOverlay(CanvasLoaded state) {
+    final shape = state.selectedShape!;
+
     // Calculate the position of the text field in screen coordinates
     final screenX = shape.entity.x * state.zoom + state.panOffset.dx;
     final screenY = shape.entity.y * state.zoom + state.panOffset.dy;
@@ -432,7 +488,7 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
             text: text,
           );
 
-          vm.applyOperation(operation);
+          vm.applyOperation(operation, persist: true);
           collaborativeVm.broadcastOperation(operation);
         },
         onSubmitted: (_) => vm.stopTextEdit(),

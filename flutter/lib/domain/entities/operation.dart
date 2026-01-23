@@ -141,3 +141,43 @@ class DeleteConnectorOperation extends Operation {
     required super.shapeId, // This is the connector ID
   });
 }
+
+// -------------------------------------------------------------------------
+// Ephemeral Operations (broadcast but not persisted)
+// -------------------------------------------------------------------------
+
+/// Update the connecting preview position (ephemeral, not persisted).
+class UpdateConnectingPreviewDomainOperation extends Operation {
+  const UpdateConnectingPreviewDomainOperation({
+    required super.opId,
+    required super.shapeId, // This is the source shape ID
+    required this.sourceAnchor,
+    required this.x,
+    required this.y,
+  });
+
+  final AnchorPoint sourceAnchor;
+  final double x;
+  final double y;
+
+  @override
+  List<Object?> get props => [...super.props, sourceAnchor, x, y];
+}
+
+/// Move a connector node during drag (ephemeral, not persisted).
+class MoveConnectorNodeDomainOperation extends Operation {
+  const MoveConnectorNodeDomainOperation({
+    required super.opId,
+    required super.shapeId, // This is the connector ID
+    required this.nodeIndex,
+    required this.x,
+    required this.y,
+  });
+
+  final int nodeIndex;
+  final double x;
+  final double y;
+
+  @override
+  List<Object?> get props => [...super.props, nodeIndex, x, y];
+}

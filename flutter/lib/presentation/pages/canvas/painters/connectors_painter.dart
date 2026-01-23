@@ -118,9 +118,7 @@ class ConnectorsPainter extends CustomPainter {
     final positions = shape.anchorPositions;
 
     final fillPaint = Paint()
-      ..color = isTarget
-          ? Colors.green.withAlpha(200)
-          : Colors.blue.withAlpha(200)
+      ..color = Colors.blue.withAlpha(200)
       ..style = PaintingStyle.fill;
 
     final borderPaint = Paint()
@@ -144,7 +142,7 @@ class ConnectorsPainter extends CustomPainter {
     );
 
     final previewPaint = Paint()
-      ..color = Colors.blue.withAlpha(150)
+      ..color = Colors.white
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

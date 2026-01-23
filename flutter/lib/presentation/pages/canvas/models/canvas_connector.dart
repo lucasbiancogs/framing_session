@@ -154,7 +154,7 @@ class CanvasConnector {
 
   void _drawPath(Canvas canvas) {
     final paint = Paint()
-      ..color = color.withAlpha(255)
+      ..color = Colors.white
       ..strokeWidth = 4.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
@@ -173,20 +173,11 @@ class CanvasConnector {
   /// [draggingNodeIndex] - If set, only paint this node (hide others during drag).
   void _paintHandles(Canvas canvas, {int? draggingNodeIndex}) {
     final waypointFillPaint = Paint()
-      ..color = const Color(0xFFFFFFFF)
+      ..color = color
       ..style = PaintingStyle.fill;
 
     final waypointBorderPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
-
-    final midFillPaint = Paint()
-      ..color = color.withAlpha(100)
-      ..style = PaintingStyle.fill;
-
-    final midBorderPaint = Paint()
-      ..color = color
+      ..color = Colors.white
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
@@ -200,15 +191,9 @@ class CanvasConnector {
       final node = nodes[i];
       final position = node.position;
 
-      if (node is SegmentMidNode) {
-        // Segment mid: smaller, semi-transparent (indicates "grab to create")
-        canvas.drawCircle(position, 5, midFillPaint);
-        canvas.drawCircle(position, 5, midBorderPaint);
-      } else {
-        // Waypoint: solid white with colored border
-        canvas.drawCircle(position, 6, waypointFillPaint);
-        canvas.drawCircle(position, 6, waypointBorderPaint);
-      }
+      // Waypoint: solid white with colored border
+      canvas.drawCircle(position, 6, waypointFillPaint);
+      canvas.drawCircle(position, 6, waypointBorderPaint);
     }
   }
 
