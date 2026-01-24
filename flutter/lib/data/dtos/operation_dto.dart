@@ -11,6 +11,7 @@ class _OperationTypes {
   static const String create = 'create';
   static const String delete = 'delete';
   static const String text = 'text';
+  static const String paste = 'paste';
   static const String createConnector = 'create_connector';
   static const String updateConnectorWaypoints = 'update_connector_waypoints';
   static const String deleteConnector = 'delete_connector';
@@ -39,6 +40,7 @@ sealed class OperationDto {
       _OperationTypes.create => CreateShapeOperationDto.fromJson(json),
       _OperationTypes.delete => DeleteShapeOperationDto.fromJson(json),
       _OperationTypes.text => TextShapeOperationDto.fromJson(json),
+      _OperationTypes.paste => PasteShapeOperationDto.fromJson(json),
       _OperationTypes.createConnector => CreateConnectorOperationDto.fromJson(
         json,
       ),
@@ -63,6 +65,7 @@ sealed class OperationDto {
       CreateShapeOperation() => CreateShapeOperationDto.fromEntity(entity),
       DeleteShapeOperation() => DeleteShapeOperationDto.fromEntity(entity),
       TextShapeOperation() => TextShapeOperationDto.fromEntity(entity),
+      PasteShapeOperation() => PasteShapeOperationDto.fromEntity(entity),
       CreateConnectorOperation() => CreateConnectorOperationDto.fromEntity(
         entity,
       ),
@@ -306,6 +309,83 @@ class TextShapeOperationDto extends OperationDto {
 
   @override
   Map<String, dynamic> toJson() => {...super.toJson(), 'text': text};
+}
+
+class PasteShapeOperationDto extends OperationDto {
+  const PasteShapeOperationDto({
+    required super.opId,
+    required super.shapeId,
+    required super.type,
+    required this.shapeType,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+    this.text,
+  });
+
+  final String shapeType;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+  final String? text;
+
+  factory PasteShapeOperationDto.fromJson(Map<String, dynamic> json) {
+    return PasteShapeOperationDto(
+      opId: json['op_id'] as String,
+      shapeId: json['shape_id'] as String,
+      type: json['operation_type'] as String,
+      shapeType: json['shape_type'] as String,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+      width: (json['width'] as num).toDouble(),
+      height: (json['height'] as num).toDouble(),
+      color: json['color'] as String,
+      text: json['text'] as String?,
+    );
+  }
+
+  factory PasteShapeOperationDto.fromEntity(PasteShapeOperation entity) =>
+      PasteShapeOperationDto(
+        opId: entity.opId,
+        shapeId: entity.shapeId,
+        type: _OperationTypes.paste,
+        shapeType: entity.shapeType.name,
+        x: entity.x,
+        y: entity.y,
+        width: entity.width,
+        height: entity.height,
+        color: entity.color,
+        text: entity.text,
+      );
+
+  @override
+  PasteShapeOperation toEntity() => PasteShapeOperation(
+    opId: opId,
+    shapeId: shapeId,
+    shapeType: ShapeType.values.byName(shapeType),
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    color: color,
+    text: text,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'shape_type': shapeType,
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+    'color': color,
+    if (text != null) 'text': text,
+  };
 }
 
 // -------------------------------------------------------------------------

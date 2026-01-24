@@ -217,7 +217,7 @@ class _ToolBar extends ConsumerWidget {
     required this.snapToGrid,
   });
 
-  final CanvasTool currentTool;
+  final CanvasTool? currentTool;
   final String currentColor;
   final bool snapToGrid;
 

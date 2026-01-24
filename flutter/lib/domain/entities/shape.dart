@@ -18,7 +18,6 @@ class Shape extends Equatable {
     required this.x,
     required this.y,
     required this.color,
-    required this.rotation,
     this.text,
   });
 
@@ -30,7 +29,6 @@ class Shape extends Equatable {
   final double x;
   final double y;
   final String color;
-  final double rotation;
   final String? text;
 
   @override
@@ -43,7 +41,6 @@ class Shape extends Equatable {
     x,
     y,
     color,
-    rotation,
     text,
   ];
 }

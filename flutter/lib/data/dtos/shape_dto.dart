@@ -11,7 +11,6 @@ class ShapeDto {
     required this.x,
     required this.y,
     required this.color,
-    required this.rotation,
     this.text,
   });
 
@@ -23,7 +22,6 @@ class ShapeDto {
   final double x;
   final double y;
   final String color;
-  final double rotation;
   final String? text;
 
   /// Create from database map (Supabase response)
@@ -36,7 +34,6 @@ class ShapeDto {
     x: (json['x'] as num).toDouble(),
     y: (json['y'] as num).toDouble(),
     color: json['color'] as String,
-    rotation: (json['rotation'] as num).toDouble(),
     text: json['text'] as String?,
   );
 
@@ -50,7 +47,6 @@ class ShapeDto {
     'x': x,
     'y': y,
     'color': color,
-    'rotation': rotation,
     'text': text,
   };
 
@@ -64,7 +60,6 @@ class ShapeDto {
     x: x,
     y: y,
     color: color,
-    rotation: rotation,
     text: text,
   );
 
@@ -78,7 +73,6 @@ class ShapeDto {
     x: entity.x,
     y: entity.y,
     color: entity.color,
-    rotation: entity.rotation,
     text: entity.text,
   );
 }

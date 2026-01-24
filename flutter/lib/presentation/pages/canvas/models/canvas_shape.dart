@@ -42,7 +42,6 @@ abstract class CanvasShape {
     double? y,
     double? width,
     double? height,
-    double? rotation,
     String? text,
     String? color,
   });
@@ -214,11 +213,6 @@ abstract class CanvasShape {
     );
   }
 
-  /// Apply rotate operation.
-  CanvasShape applyRotate(double angleDelta) {
-    return copyWith(rotation: entity.rotation + angleDelta);
-  }
-
   /// Parse a hex color string to a Color.
   Color get color => color_helper.getColorFromHex(entity.color);
 
@@ -277,7 +271,6 @@ class RectangleCanvasShape extends CanvasShape {
     double? y,
     double? width,
     double? height,
-    double? rotation,
     String? text,
     String? color,
   }) => RectangleCanvasShape(
@@ -290,7 +283,6 @@ class RectangleCanvasShape extends CanvasShape {
       x: x ?? entity.x,
       y: y ?? entity.y,
       color: color ?? entity.color,
-      rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
     ),
   );
@@ -335,13 +327,6 @@ class RectangleCanvasShape extends CanvasShape {
 
     final rrect = RRect.fromRectAndRadius(bounds, const Radius.circular(4));
 
-    if (entity.rotation != 0) {
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(entity.rotation);
-      canvas.translate(-center.dx, -center.dy);
-    }
-
     canvas.drawRRect(rrect, paint);
     canvas.drawRRect(rrect, borderPaint);
 
@@ -356,10 +341,6 @@ class RectangleCanvasShape extends CanvasShape {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawRRect(rrect, borderPaint);
-    }
-
-    if (entity.rotation != 0) {
-      canvas.restore();
     }
   }
 
@@ -404,7 +385,6 @@ class CircleCanvasShape extends CanvasShape {
     double? y,
     double? width,
     double? height,
-    double? rotation,
     String? text,
     String? color,
   }) => CircleCanvasShape(
@@ -417,7 +397,6 @@ class CircleCanvasShape extends CanvasShape {
       x: x ?? entity.x,
       y: y ?? entity.y,
       color: color ?? entity.color,
-      rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
     ),
   );
@@ -528,7 +507,6 @@ class TriangleCanvasShape extends CanvasShape {
     double? y,
     double? width,
     double? height,
-    double? rotation,
     String? text,
     String? color,
   }) => TriangleCanvasShape(
@@ -541,7 +519,6 @@ class TriangleCanvasShape extends CanvasShape {
       x: x ?? entity.x,
       y: y ?? entity.y,
       color: color ?? entity.color,
-      rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
     ),
   );
@@ -599,13 +576,6 @@ class TriangleCanvasShape extends CanvasShape {
 
     final path = _trianglePath;
 
-    if (entity.rotation != 0) {
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(entity.rotation);
-      canvas.translate(-center.dx, -center.dy);
-    }
-
     canvas.drawPath(path, paint);
     canvas.drawPath(path, borderPaint);
 
@@ -620,10 +590,6 @@ class TriangleCanvasShape extends CanvasShape {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawPath(path, borderPaint);
-    }
-
-    if (entity.rotation != 0) {
-      canvas.restore();
     }
   }
 
@@ -681,7 +647,6 @@ class TextCanvasShape extends CanvasShape {
       x: x ?? entity.x,
       y: y ?? entity.y,
       color: color ?? entity.color,
-      rotation: rotation ?? entity.rotation,
       text: text ?? entity.text,
     ),
   );
@@ -716,13 +681,6 @@ class TextCanvasShape extends CanvasShape {
   }) {
     final rrect = RRect.fromRectAndRadius(bounds, const Radius.circular(4));
 
-    if (entity.rotation != 0) {
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(entity.rotation);
-      canvas.translate(-center.dx, -center.dy);
-    }
-
     // Only paint text if not editing (TextField overlay handles it)
     if (!isEditingText) {
       final textSpan = TextSpan(
@@ -752,10 +710,6 @@ class TextCanvasShape extends CanvasShape {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawRRect(rrect, borderPaint);
-    }
-
-    if (entity.rotation != 0) {
-      canvas.restore();
     }
   }
 

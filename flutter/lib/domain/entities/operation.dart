@@ -79,6 +79,38 @@ class TextShapeOperation extends Operation {
   final String text;
 }
 
+/// Paste a shape with all properties (for copy/paste and duplicate).
+class PasteShapeOperation extends Operation {
+  const PasteShapeOperation({
+    required super.opId,
+    required super.shapeId,
+    required this.shapeType,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+    this.text,
+  });
+
+  final ShapeType shapeType;
+  final double x, y, width, height;
+  final String color;
+  final String? text;
+
+  @override
+  List<Object?> get props => [
+    ...super.props,
+    shapeType,
+    x,
+    y,
+    width,
+    height,
+    color,
+    text,
+  ];
+}
+
 // -------------------------------------------------------------------------
 // Connector Operations
 // -------------------------------------------------------------------------

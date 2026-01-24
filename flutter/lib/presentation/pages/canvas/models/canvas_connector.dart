@@ -267,13 +267,16 @@ class CanvasConnector {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
+    if (draggingNodeIndex != null) {
+      final node = nodes[draggingNodeIndex];
+      final position = node.position;
+      canvas.drawCircle(position, 6, waypointFillPaint);
+      canvas.drawCircle(position, 6, waypointBorderPaint);
+      return;
+    }
+
     // Draw handles (skip anchor nodes at first and last)
     for (int i = 1; i < nodes.length - 1; i++) {
-      // If dragging a node, only show that node
-      if (draggingNodeIndex != null && i != draggingNodeIndex) {
-        continue;
-      }
-
       final node = nodes[i];
       final position = node.position;
 

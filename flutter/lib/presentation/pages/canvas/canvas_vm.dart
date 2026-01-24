@@ -160,10 +160,17 @@ class CanvasVM extends StateNotifier<CanvasState> {
   }
 
   /// Change the current tool.
-  void setTool(CanvasTool tool) {
+  void setTool(CanvasTool? tool) {
     if (state is! CanvasLoaded) return;
 
-    state = _loadedState.copyWith(currentTool: tool);
+    state = _loadedState.copyWith(currentTool: tool, clearTool: tool == null);
+  }
+
+  /// Clear the current tool (one-shot tool behavior).
+  void clearTool() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(clearTool: true);
   }
 
   /// Update pan offset.
@@ -272,6 +279,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
         text,
       ),
       CreateShapeCanvasOperation() => _applyCreate(operation),
+      PasteShapeCanvasOperation() => _applyPaste(operation),
       DeleteShapeCanvasOperation(:final shapeId) => _applyDelete(
         shapeId,
         persist: persist,
@@ -406,6 +414,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
   void _scheduleDebouncedPersist(CanvasOperation operation) {
     switch (operation) {
       case CreateShapeCanvasOperation():
+      case PasteShapeCanvasOperation():
         final shape = _loadedState.shapes.firstWhere(
           (s) => s.id == operation.shapeId,
           orElse: () =>
@@ -531,7 +540,27 @@ class CanvasVM extends StateNotifier<CanvasState> {
       width: initialShapeSize,
       height: initialShapeSize,
       color: operation.color,
-      rotation: 0,
+    );
+
+    final canvasShape = CanvasShape.createCanvasShape(shape);
+
+    return [..._loadedState.shapes, canvasShape];
+  }
+
+  /// Paste a shape with all properties preserved.
+  List<CanvasShape> _applyPaste(PasteShapeCanvasOperation operation) {
+    if (state is! CanvasLoaded) return _loadedState.shapes;
+
+    final shape = Shape(
+      id: operation.shapeId,
+      sessionId: _sessionId,
+      shapeType: operation.shapeType,
+      x: operation.x,
+      y: operation.y,
+      width: operation.width,
+      height: operation.height,
+      color: operation.color,
+      text: operation.text,
     );
 
     final canvasShape = CanvasShape.createCanvasShape(shape);
@@ -573,28 +602,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
       }
     }
 
-    // Check if selected connector was deleted
-    final selectedConnectorId = _loadedState.selectedConnectorId;
-    final connectorSelectionCleared =
-        selectedConnectorId != null &&
-        connectorsToDelete.any((c) => c.id == selectedConnectorId);
-
-    // Update state with shapes, connectors, and clear selection
-    state = CanvasLoaded(
-      shapes: newShapes,
-      connectors: newConnectors,
-      selectedShapeId: null,
-      selectedConnectorId: connectorSelectionCleared
-          ? null
-          : selectedConnectorId,
-      isEditingText: false,
-      panOffset: _loadedState.panOffset,
-      zoom: _loadedState.zoom,
-      currentTool: _loadedState.currentTool,
-      currentColor: _loadedState.currentColor,
-      snapToGrid: _loadedState.snapToGrid,
-      connectingMode: _loadedState.connectingMode,
-    );
+    state = _loadedState
+        .copyWith(clearSelections: true)
+        .copyWith(shapes: newShapes, connectors: newConnectors);
 
     return newShapes;
   }
@@ -754,22 +764,12 @@ class CanvasVM extends StateNotifier<CanvasState> {
 
     if (connectorId == null) {
       // Just clear connector selection
-      state = _loadedState.copyWith(selectedConnectorId: null);
+      state = _loadedState.copyWith(clearSelections: true);
     } else {
       // Select connector and clear shape selection
-      state = CanvasLoaded(
-        shapes: _loadedState.shapes,
-        connectors: _loadedState.connectors,
-        selectedShapeId: null, // Clear shape selection
-        selectedConnectorId: connectorId,
-        isEditingText: false,
-        panOffset: _loadedState.panOffset,
-        zoom: _loadedState.zoom,
-        currentTool: _loadedState.currentTool,
-        currentColor: _loadedState.currentColor,
-        snapToGrid: _loadedState.snapToGrid,
-        connectingMode: _loadedState.connectingMode,
-      );
+      state = _loadedState
+          .copyWith(clearSelections: true)
+          .copyWith(selectedConnectorId: connectorId);
     }
   }
 
@@ -1162,7 +1162,7 @@ class CanvasLoaded extends CanvasState {
     this.isEditingText = false,
     this.panOffset = Offset.zero,
     double zoom = 1.0,
-    this.currentTool = CanvasTool.rectangle,
+    this.currentTool,
     this.currentColor = '#19191f',
     this.snapToGrid = true,
     this.connectingMode,
@@ -1194,7 +1194,7 @@ class CanvasLoaded extends CanvasState {
   double get zoom => _zoom.clamp(_zoomMin, _zoomMax);
 
   /// Currently selected drawing tool.
-  final CanvasTool currentTool;
+  final CanvasTool? currentTool;
 
   /// Currently selected color for new shapes.
   final String currentColor;
@@ -1264,6 +1264,7 @@ class CanvasLoaded extends CanvasState {
     bool? snapToGrid,
     ConnectingModeState? connectingMode,
     bool clearSelections = false,
+    bool clearTool = false,
   }) {
     return CanvasLoaded(
       shapes: shapes ?? this.shapes,
@@ -1279,7 +1280,7 @@ class CanvasLoaded extends CanvasState {
           : (isEditingText ?? this.isEditingText),
       panOffset: panOffset ?? this.panOffset,
       zoom: zoom ?? this.zoom,
-      currentTool: currentTool ?? this.currentTool,
+      currentTool: clearTool ? null : (currentTool ?? this.currentTool),
       currentColor: currentColor ?? this.currentColor,
       snapToGrid: snapToGrid ?? this.snapToGrid,
       connectingMode: clearSelections

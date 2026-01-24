@@ -61,6 +61,17 @@ sealed class CanvasOperation extends Equatable {
         shapeId: entity.shapeId,
         text: entity.text,
       ),
+      PasteShapeOperation() => PasteShapeCanvasOperation(
+        opId: entity.opId,
+        shapeId: entity.shapeId,
+        shapeType: entity.shapeType,
+        x: entity.x,
+        y: entity.y,
+        width: entity.width,
+        height: entity.height,
+        color: entity.color,
+        text: entity.text,
+      ),
       // Connector operations
       CreateConnectorOperation() => CreateConnectorCanvasOperation(
         opId: entity.opId,
@@ -213,6 +224,57 @@ class TextShapeCanvasOperation extends CanvasOperation {
 
   @override
   List<Object?> get props => [...super.props, text];
+}
+
+/// Paste a shape with all properties (for copy/paste and duplicate).
+///
+/// Unlike [CreateShapeCanvasOperation] which uses default size,
+/// this operation preserves all original shape properties.
+class PasteShapeCanvasOperation extends CanvasOperation {
+  const PasteShapeCanvasOperation({
+    required super.opId,
+    required super.shapeId,
+    required this.shapeType,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.color,
+    this.text,
+  });
+
+  final ShapeType shapeType;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final String color;
+  final String? text;
+
+  @override
+  Operation toEntity() => PasteShapeOperation(
+    opId: opId,
+    shapeId: shapeId,
+    shapeType: shapeType,
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    color: color,
+    text: text,
+  );
+
+  @override
+  List<Object?> get props => [
+    ...super.props,
+    shapeType,
+    x,
+    y,
+    width,
+    height,
+    color,
+    text,
+  ];
 }
 
 // -------------------------------------------------------------------------
