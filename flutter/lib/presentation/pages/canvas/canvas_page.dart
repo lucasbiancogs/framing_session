@@ -87,14 +87,14 @@ class CanvasPage extends ConsumerWidget {
                   users: collaborativeCanvasState.onlineUsers,
                 ),
               ),
-            // Delete button (when shape or connector is selected)
-            if (state is CanvasLoaded &&
-                (state.selectedShapeId != null ||
-                    state.selectedConnectorId != null))
+            // Delete button (when shape(s) or connector(s) are selected)
+            if (state is CanvasLoaded && state.hasSelection)
               Tooltip(
                 tooltip: TooltipContainer(
                   child: Text(
-                    state.selectedConnectorId != null
+                    state.hasMultiSelection
+                        ? 'Delete selected items'
+                        : state.selectedConnectorIds.isNotEmpty
                         ? 'Delete selected connector'
                         : 'Delete selected shape',
                   ),
@@ -102,28 +102,25 @@ class CanvasPage extends ConsumerWidget {
                 child: IconButton.ghost(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () {
-                    // Delete connector if one is selected
-                    if (state.selectedConnectorId != null) {
+                    // Delete all selected connectors
+                    for (final connectorId in state.selectedConnectorIds) {
                       final operation = DeleteConnectorCanvasOperation(
                         opId: const Uuid().v4(),
-                        connectorId: state.selectedConnectorId!,
+                        connectorId: connectorId,
                       );
                       vm.applyOperation(operation, persist: true);
                       collaborativeVm.broadcastOperation(operation);
-                      return;
                     }
 
-                    // Delete shape if one is selected
-                    final shapeId = state.selectedShapeId;
-                    if (shapeId == null) return;
-
-                    final operation = DeleteShapeCanvasOperation(
-                      opId: const Uuid().v4(),
-                      shapeId: shapeId,
-                    );
-
-                    vm.applyOperation(operation, persist: true);
-                    collaborativeVm.broadcastOperation(operation);
+                    // Delete all selected shapes
+                    for (final shapeId in state.selectedShapeIds) {
+                      final operation = DeleteShapeCanvasOperation(
+                        opId: const Uuid().v4(),
+                        shapeId: shapeId,
+                      );
+                      vm.applyOperation(operation, persist: true);
+                      collaborativeVm.broadcastOperation(operation);
+                    }
                   },
                 ),
               ),

@@ -19,8 +19,8 @@ class ConnectorsPainter extends CustomPainter {
   ConnectorsPainter({
     required this.connectors,
     required this.shapes,
-    this.selectedConnectorId,
-    this.selectedShapeId,
+    this.selectedConnectorIds = const {},
+    this.selectedShapeIds = const {},
     this.draggingConnectorId,
     this.draggingNodeIndex,
     this.isConnecting = false,
@@ -33,8 +33,8 @@ class ConnectorsPainter extends CustomPainter {
 
   final List<CanvasConnector> connectors;
   final List<CanvasShape> shapes;
-  final String? selectedConnectorId;
-  final String? selectedShapeId;
+  final Set<String> selectedConnectorIds;
+  final Set<String> selectedShapeIds;
 
   /// The connector being edited (node being dragged).
   final String? draggingConnectorId;
@@ -68,7 +68,7 @@ class ConnectorsPainter extends CustomPainter {
 
     // Draw connectors (behind shapes)
     for (final connector in connectors) {
-      final isSelected = connector.id == selectedConnectorId;
+      final isSelected = selectedConnectorIds.contains(connector.id);
       final isDragging = connector.id == draggingConnectorId;
 
       connector.paint(
@@ -78,8 +78,9 @@ class ConnectorsPainter extends CustomPainter {
       );
     }
 
-    // Draw anchor points on selected shape
-    if (selectedShapeId != null) {
+    // Draw anchor points on selected shapes (only for single selection)
+    if (selectedShapeIds.length == 1) {
+      final selectedShapeId = selectedShapeIds.first;
       final selectedShape = shapes.firstWhere(
         (s) => s.id == selectedShapeId,
         orElse: () => shapes.first,
@@ -208,8 +209,8 @@ class ConnectorsPainter extends CustomPainter {
   bool shouldRepaint(covariant ConnectorsPainter oldDelegate) {
     return connectors != oldDelegate.connectors ||
         shapes != oldDelegate.shapes ||
-        selectedConnectorId != oldDelegate.selectedConnectorId ||
-        selectedShapeId != oldDelegate.selectedShapeId ||
+        selectedConnectorIds != oldDelegate.selectedConnectorIds ||
+        selectedShapeIds != oldDelegate.selectedShapeIds ||
         draggingConnectorId != oldDelegate.draggingConnectorId ||
         draggingNodeIndex != oldDelegate.draggingNodeIndex ||
         isConnecting != oldDelegate.isConnecting ||

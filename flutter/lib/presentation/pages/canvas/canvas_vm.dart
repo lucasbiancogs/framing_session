@@ -142,11 +142,9 @@ class CanvasVM extends StateNotifier<CanvasState> {
     await _loadShapes();
   }
 
-  /// Select a shape by ID.
+  /// Select a shape by ID (replaces current selection).
   void selectShape(String? shapeId) {
     if (state is! CanvasLoaded) return;
-
-    if (shapeId == _loadedState.selectedShapeId) return;
 
     if (shapeId == null) {
       // Clear selection
@@ -154,9 +152,44 @@ class CanvasVM extends StateNotifier<CanvasState> {
       return;
     }
 
-    state = _loadedState
-        .copyWith(clearSelections: true)
-        .copyWith(selectedShapeId: shapeId);
+    // Single selection: clear others and select this one
+    state = _loadedState.copyWith(
+      selectedShapeIds: {shapeId},
+      selectedConnectorIds: const {},
+    );
+  }
+
+  /// Toggle a shape in the selection (for Cmd/Ctrl+click).
+  void toggleShapeSelection(String shapeId) {
+    if (state is! CanvasLoaded) return;
+
+    final currentIds = Set<String>.from(_loadedState.selectedShapeIds);
+    if (currentIds.contains(shapeId)) {
+      currentIds.remove(shapeId);
+    } else {
+      currentIds.add(shapeId);
+    }
+
+    state = _loadedState.copyWith(selectedShapeIds: currentIds);
+  }
+
+  /// Add a shape to the current selection.
+  void addShapeToSelection(String shapeId) {
+    if (state is! CanvasLoaded) return;
+
+    final currentIds = Set<String>.from(_loadedState.selectedShapeIds);
+    currentIds.add(shapeId);
+    state = _loadedState.copyWith(selectedShapeIds: currentIds);
+  }
+
+  /// Select multiple shapes (replaces current selection).
+  void selectMultipleShapes(Set<String> shapeIds) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(
+      selectedShapeIds: shapeIds,
+      selectedConnectorIds: const {},
+    );
   }
 
   /// Change the current tool.
@@ -206,7 +239,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
     if (state is! CanvasLoaded) return;
 
     state = _loadedState.copyWith(
-      selectedShapeId: shapeId,
+      selectedShapeIds: {shapeId},
       isEditingText: true,
     );
   }
@@ -631,7 +664,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
         fromShapeId: shapeId,
         fromAnchor: anchor,
       ),
-      selectedShapeId: shapeId,
+      selectedShapeIds: {shapeId},
     );
   }
 
@@ -758,7 +791,7 @@ class CanvasVM extends StateNotifier<CanvasState> {
     };
   }
 
-  /// Select a connector by ID.
+  /// Select a connector by ID (replaces current selection).
   void selectConnector(String? connectorId) {
     if (state is! CanvasLoaded) return;
 
@@ -767,10 +800,90 @@ class CanvasVM extends StateNotifier<CanvasState> {
       state = _loadedState.copyWith(clearSelections: true);
     } else {
       // Select connector and clear shape selection
-      state = _loadedState
-          .copyWith(clearSelections: true)
-          .copyWith(selectedConnectorId: connectorId);
+      state = _loadedState.copyWith(
+        selectedConnectorIds: {connectorId},
+        selectedShapeIds: const {},
+      );
     }
+  }
+
+  /// Toggle a connector in the selection (for Cmd/Ctrl+click).
+  void toggleConnectorSelection(String connectorId) {
+    if (state is! CanvasLoaded) return;
+
+    final currentIds = Set<String>.from(_loadedState.selectedConnectorIds);
+    if (currentIds.contains(connectorId)) {
+      currentIds.remove(connectorId);
+    } else {
+      currentIds.add(connectorId);
+    }
+
+    state = _loadedState.copyWith(selectedConnectorIds: currentIds);
+  }
+
+  /// Add a connector to the current selection.
+  void addConnectorToSelection(String connectorId) {
+    if (state is! CanvasLoaded) return;
+
+    final currentIds = Set<String>.from(_loadedState.selectedConnectorIds);
+    currentIds.add(connectorId);
+    state = _loadedState.copyWith(selectedConnectorIds: currentIds);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Marquee Selection Methods
+  // ---------------------------------------------------------------------------
+
+  /// Update the selection rectangle during marquee drag.
+  void updateSelectionRect(Rect rect) {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(selectionRect: rect);
+  }
+
+  /// Clear the selection rectangle (on pointer up).
+  void clearSelectionRect() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(clearSelectionRect: true);
+  }
+
+  /// Select all shapes and connectors that intersect with the given rectangle.
+  void selectItemsInRect(Rect rect) {
+    if (state is! CanvasLoaded) return;
+
+    // Find shapes that intersect with the selection rectangle
+    final shapeIds = <String>{};
+    for (final shape in _loadedState.shapes) {
+      if (rect.overlaps(shape.bounds)) {
+        shapeIds.add(shape.id);
+      }
+    }
+
+    // Find connectors that intersect with the selection rectangle
+    final connectorIds = <String>{};
+    for (final connector in _loadedState.connectors) {
+      // Check if any point in the connector's path is within the rect
+      for (final point in connector.path) {
+        if (rect.contains(point)) {
+          connectorIds.add(connector.id);
+          break;
+        }
+      }
+    }
+
+    state = _loadedState.copyWith(
+      selectedShapeIds: shapeIds,
+      selectedConnectorIds: connectorIds,
+      clearSelectionRect: true,
+    );
+  }
+
+  /// Clear all selections.
+  void clearSelection() {
+    if (state is! CanvasLoaded) return;
+
+    state = _loadedState.copyWith(clearSelections: true);
   }
 
   /// Delete the currently selected connector.
@@ -1095,12 +1208,13 @@ class CanvasVM extends StateNotifier<CanvasState> {
         .where((c) => c.id != operation.connectorId)
         .toList();
 
+    // Remove from selection if it was selected
+    final newSelectedIds = Set<String>.from(_loadedState.selectedConnectorIds);
+    newSelectedIds.remove(operation.connectorId);
+
     state = _loadedState.copyWith(
       connectors: newConnectors,
-      selectedConnectorId:
-          _loadedState.selectedConnectorId == operation.connectorId
-          ? null
-          : _loadedState.selectedConnectorId,
+      selectedConnectorIds: newSelectedIds,
     );
 
     if (persist) {
@@ -1157,8 +1271,9 @@ class CanvasLoaded extends CanvasState {
   const CanvasLoaded({
     required this.shapes,
     this.connectors = const [],
-    this.selectedShapeId,
-    this.selectedConnectorId,
+    this.selectedShapeIds = const {},
+    this.selectedConnectorIds = const {},
+    this.selectionRect,
     this.isEditingText = false,
     this.panOffset = Offset.zero,
     double zoom = 1.0,
@@ -1174,11 +1289,14 @@ class CanvasLoaded extends CanvasState {
   /// All connectors in the session.
   final List<CanvasConnector> connectors;
 
-  /// Currently selected shape ID.
-  final String? selectedShapeId;
+  /// Currently selected shape IDs (supports multiselect).
+  final Set<String> selectedShapeIds;
 
-  /// Currently selected connector ID.
-  final String? selectedConnectorId;
+  /// Currently selected connector IDs (supports multiselect).
+  final Set<String> selectedConnectorIds;
+
+  /// Selection rectangle for marquee selection (null when not selecting).
+  final Rect? selectionRect;
 
   /// Whether the selected shape's text is being edited (shows TextField overlay).
   final bool isEditingText;
@@ -1223,8 +1341,9 @@ class CanvasLoaded extends CanvasState {
   List<Object?> get props => [
     shapes,
     connectors,
-    selectedShapeId,
-    selectedConnectorId,
+    selectedShapeIds,
+    selectedConnectorIds,
+    selectionRect,
     isEditingText,
     panOffset,
     zoom,
@@ -1239,8 +1358,9 @@ class CanvasLoaded extends CanvasState {
       exception: exception,
       shapes: shapes,
       connectors: connectors,
-      selectedShapeId: selectedShapeId,
-      selectedConnectorId: selectedConnectorId,
+      selectedShapeIds: selectedShapeIds,
+      selectedConnectorIds: selectedConnectorIds,
+      selectionRect: selectionRect,
       isEditingText: isEditingText,
       panOffset: panOffset,
       zoom: zoom,
@@ -1251,11 +1371,13 @@ class CanvasLoaded extends CanvasState {
     );
   }
 
+  // TODO(lucasbiancogs): Remove the clearSelections, clearTool, clearSelectionRect, these are suposed to be methods
   CanvasLoaded copyWith({
     List<CanvasShape>? shapes,
     List<CanvasConnector>? connectors,
-    String? selectedShapeId,
-    String? selectedConnectorId,
+    Set<String>? selectedShapeIds,
+    Set<String>? selectedConnectorIds,
+    Rect? selectionRect,
     bool? isEditingText,
     Offset? panOffset,
     double? zoom,
@@ -1265,16 +1387,20 @@ class CanvasLoaded extends CanvasState {
     ConnectingModeState? connectingMode,
     bool clearSelections = false,
     bool clearTool = false,
+    bool clearSelectionRect = false,
   }) {
     return CanvasLoaded(
       shapes: shapes ?? this.shapes,
       connectors: connectors ?? this.connectors,
-      selectedShapeId: clearSelections
+      selectedShapeIds: clearSelections
+          ? const {}
+          : (selectedShapeIds ?? this.selectedShapeIds),
+      selectedConnectorIds: clearSelections
+          ? const {}
+          : (selectedConnectorIds ?? this.selectedConnectorIds),
+      selectionRect: clearSelectionRect
           ? null
-          : (selectedShapeId ?? this.selectedShapeId),
-      selectedConnectorId: clearSelections
-          ? null
-          : (selectedConnectorId ?? this.selectedConnectorId),
+          : (selectionRect ?? this.selectionRect),
       isEditingText: clearSelections
           ? false
           : (isEditingText ?? this.isEditingText),
@@ -1289,15 +1415,40 @@ class CanvasLoaded extends CanvasState {
     );
   }
 
-  /// Get the currently selected shape (if any).
-  CanvasShape? get selectedShape => selectedShapeId != null
-      ? shapes.firstWhere((s) => s.id == selectedShapeId)
+  /// Get the currently selected shape (if single selection, for backwards compat).
+  /// Returns the first selected shape or null if none/multiple selected.
+  CanvasShape? get selectedShape => selectedShapeIds.length == 1
+      ? shapes.firstWhere((s) => s.id == selectedShapeIds.first)
       : null;
 
-  /// Get the currently selected connector (if any).
-  CanvasConnector? get selectedConnector => selectedConnectorId != null
-      ? connectors.firstWhere((c) => c.id == selectedConnectorId)
+  /// Get the first selected shape ID (for backwards compatibility).
+  String? get selectedShapeId =>
+      selectedShapeIds.isNotEmpty ? selectedShapeIds.first : null;
+
+  /// Get the first selected connector ID (for backwards compatibility).
+  String? get selectedConnectorId =>
+      selectedConnectorIds.isNotEmpty ? selectedConnectorIds.first : null;
+
+  /// Get the currently selected connector (if single selection).
+  CanvasConnector? get selectedConnector => selectedConnectorIds.length == 1
+      ? connectors.firstWhere((c) => c.id == selectedConnectorIds.first)
       : null;
+
+  /// Get all selected shapes.
+  List<CanvasShape> get selectedShapes =>
+      shapes.where((s) => selectedShapeIds.contains(s.id)).toList();
+
+  /// Get all selected connectors.
+  List<CanvasConnector> get selectedConnectors =>
+      connectors.where((c) => selectedConnectorIds.contains(c.id)).toList();
+
+  /// Whether multiple items are selected.
+  bool get hasMultiSelection =>
+      selectedShapeIds.length + selectedConnectorIds.length > 1;
+
+  /// Whether any items are selected.
+  bool get hasSelection =>
+      selectedShapeIds.isNotEmpty || selectedConnectorIds.isNotEmpty;
 
   /// Get the shape being connected from (if in connecting mode).
   CanvasShape? get connectingFromShape => connectingFromShapeId != null
@@ -1324,8 +1475,9 @@ class CanvasPersistError extends CanvasLoaded {
     required this.exception,
     required super.shapes,
     super.connectors,
-    super.selectedShapeId,
-    super.selectedConnectorId,
+    super.selectedShapeIds,
+    super.selectedConnectorIds,
+    super.selectionRect,
     super.isEditingText,
     super.panOffset,
     super.zoom,

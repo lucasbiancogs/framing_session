@@ -99,22 +99,27 @@ class KeyboardController {
   // Copy/Paste/Duplicate
   // ---------------------------------------------------------------------------
 
-  /// Handle Cmd/Ctrl + C - Copy selected shape to clipboard as JSON.
+  /// Handle Cmd/Ctrl + C - Copy selected shapes to clipboard as JSON.
   KeyEventResult _handleCopy(CanvasLoaded state) {
-    final selectedShape = state.selectedShape;
+    if (!state.hasSelection) return KeyEventResult.ignored;
 
-    if (selectedShape == null) return KeyEventResult.ignored;
+    // Serialize all selected shapes to clipboard
+    final shapesData = state.selectedShapes
+        .map(
+          (shape) => {
+            'shape_type': shape.entity.shapeType.name,
+            'x': shape.entity.x,
+            'y': shape.entity.y,
+            'width': shape.entity.width,
+            'height': shape.entity.height,
+            'color': shape.entity.color,
+            if (shape.entity.text != null) 'text': shape.entity.text,
+          },
+        )
+        .toList();
 
-    // Serialize shape to clipboard JSON (without id and sessionId)
-    final clipboardData = {
-      'shape_type': selectedShape.entity.shapeType.name,
-      'x': selectedShape.entity.x,
-      'y': selectedShape.entity.y,
-      'width': selectedShape.entity.width,
-      'height': selectedShape.entity.height,
-      'color': selectedShape.entity.color,
-      if (selectedShape.entity.text != null) 'text': selectedShape.entity.text,
-    };
+    // Store as array even for single item (consistent format)
+    final clipboardData = {'shapes': shapesData};
 
     final jsonString = jsonEncode(clipboardData);
     Clipboard.setData(ClipboardData(text: jsonString));
@@ -122,7 +127,7 @@ class KeyboardController {
     return KeyEventResult.handled;
   }
 
-  /// Handle Cmd/Ctrl + V - Paste shape from clipboard.
+  /// Handle Cmd/Ctrl + V - Paste shapes from clipboard.
   ///
   /// This is async but we return immediately and schedule the paste.
   KeyEventResult _handlePaste(CanvasLoaded state) {
@@ -139,60 +144,102 @@ class KeyboardController {
 
       final json = jsonDecode(clipboardData!.text!) as Map<String, dynamic>;
 
-      // Validate required fields
-      if (!json.containsKey('shape_type') ||
-          !json.containsKey('x') ||
-          !json.containsKey('y') ||
-          !json.containsKey('width') ||
-          !json.containsKey('height') ||
-          !json.containsKey('color')) {
+      // Handle new multi-shape format
+      if (json.containsKey('shapes')) {
+        final shapesData = json['shapes'] as List<dynamic>;
+        final pastedIds = <String>{};
+
+        for (final shapeJson in shapesData) {
+          final shapeData = shapeJson as Map<String, dynamic>;
+          if (!_isValidShapeData(shapeData)) continue;
+
+          final operation = PasteShapeCanvasOperation(
+            opId: const Uuid().v4(),
+            shapeId: const Uuid().v4(),
+            shapeType: ShapeType.values.byName(
+              shapeData['shape_type'] as String,
+            ),
+            x: (shapeData['x'] as num).toDouble() + _pasteOffset,
+            y: (shapeData['y'] as num).toDouble() + _pasteOffset,
+            width: (shapeData['width'] as num).toDouble(),
+            height: (shapeData['height'] as num).toDouble(),
+            color: shapeData['color'] as String,
+            text: shapeData['text'] as String?,
+          );
+
+          vm.applyOperation(operation, persist: true);
+          collaborativeVm.broadcastOperation(operation);
+          pastedIds.add(operation.shapeId);
+        }
+
+        // Select all newly pasted shapes
+        if (pastedIds.isNotEmpty) {
+          vm.selectMultipleShapes(pastedIds);
+        }
         return;
       }
 
-      final operation = PasteShapeCanvasOperation(
-        opId: const Uuid().v4(),
-        shapeId: const Uuid().v4(),
-        shapeType: ShapeType.values.byName(json['shape_type'] as String),
-        x: (json['x'] as num).toDouble() + _pasteOffset,
-        y: (json['y'] as num).toDouble() + _pasteOffset,
-        width: (json['width'] as num).toDouble(),
-        height: (json['height'] as num).toDouble(),
-        color: json['color'] as String,
-        text: json['text'] as String?,
-      );
+      // Handle legacy single-shape format (backwards compat)
+      if (_isValidShapeData(json)) {
+        final operation = PasteShapeCanvasOperation(
+          opId: const Uuid().v4(),
+          shapeId: const Uuid().v4(),
+          shapeType: ShapeType.values.byName(json['shape_type'] as String),
+          x: (json['x'] as num).toDouble() + _pasteOffset,
+          y: (json['y'] as num).toDouble() + _pasteOffset,
+          width: (json['width'] as num).toDouble(),
+          height: (json['height'] as num).toDouble(),
+          color: json['color'] as String,
+          text: json['text'] as String?,
+        );
 
-      vm.applyOperation(operation, persist: true);
-      collaborativeVm.broadcastOperation(operation);
-
-      // Select the newly pasted shape
-      vm.selectShape(operation.shapeId);
+        vm.applyOperation(operation, persist: true);
+        collaborativeVm.broadcastOperation(operation);
+        vm.selectShape(operation.shapeId);
+      }
     } catch (_) {
       // Invalid clipboard data - ignore silently
     }
   }
 
-  /// Handle Cmd/Ctrl + D - Duplicate selected shape.
+  /// Validate that shape data contains required fields.
+  bool _isValidShapeData(Map<String, dynamic> data) {
+    return data.containsKey('shape_type') &&
+        data.containsKey('x') &&
+        data.containsKey('y') &&
+        data.containsKey('width') &&
+        data.containsKey('height') &&
+        data.containsKey('color');
+  }
+
+  /// Handle Cmd/Ctrl + D - Duplicate selected shapes.
   KeyEventResult _handleDuplicate(CanvasLoaded state) {
-    final selectedShape = state.selectedShape;
-    if (selectedShape == null) return KeyEventResult.ignored;
+    if (!state.hasSelection) return KeyEventResult.ignored;
 
-    final operation = PasteShapeCanvasOperation(
-      opId: const Uuid().v4(),
-      shapeId: const Uuid().v4(),
-      shapeType: selectedShape.entity.shapeType,
-      x: selectedShape.entity.x + _pasteOffset,
-      y: selectedShape.entity.y + _pasteOffset,
-      width: selectedShape.entity.width,
-      height: selectedShape.entity.height,
-      color: selectedShape.entity.color,
-      text: selectedShape.entity.text,
-    );
+    final pastedIds = <String>{};
 
-    vm.applyOperation(operation, persist: true);
-    collaborativeVm.broadcastOperation(operation);
+    for (final shape in state.selectedShapes) {
+      final operation = PasteShapeCanvasOperation(
+        opId: const Uuid().v4(),
+        shapeId: const Uuid().v4(),
+        shapeType: shape.entity.shapeType,
+        x: shape.entity.x + _pasteOffset,
+        y: shape.entity.y + _pasteOffset,
+        width: shape.entity.width,
+        height: shape.entity.height,
+        color: shape.entity.color,
+        text: shape.entity.text,
+      );
 
-    // Select the duplicated shape
-    vm.selectShape(operation.shapeId);
+      vm.applyOperation(operation, persist: true);
+      collaborativeVm.broadcastOperation(operation);
+      pastedIds.add(operation.shapeId);
+    }
+
+    // Select all duplicated shapes
+    if (pastedIds.isNotEmpty) {
+      vm.selectMultipleShapes(pastedIds);
+    }
 
     return KeyEventResult.handled;
   }
@@ -201,30 +248,31 @@ class KeyboardController {
   // Delete/Escape/Enter
   // ---------------------------------------------------------------------------
 
-  /// Handle Delete/Backspace key - delete selected connector or shape.
+  /// Handle Delete/Backspace key - delete all selected connectors and shapes.
   KeyEventResult _handleDelete(CanvasLoaded state) {
-    // Priority: delete connector if selected, otherwise delete shape
-    if (state.selectedConnectorId != null) {
+    if (!state.hasSelection) return KeyEventResult.ignored;
+
+    // Delete all selected connectors
+    for (final connectorId in state.selectedConnectorIds) {
       final operation = DeleteConnectorCanvasOperation(
         opId: const Uuid().v4(),
-        connectorId: state.selectedConnectorId!,
+        connectorId: connectorId,
       );
       vm.applyOperation(operation, persist: true);
       collaborativeVm.broadcastOperation(operation);
-      return KeyEventResult.handled;
     }
 
-    if (state.selectedShapeId != null) {
+    // Delete all selected shapes
+    for (final shapeId in state.selectedShapeIds) {
       final operation = DeleteShapeCanvasOperation(
         opId: const Uuid().v4(),
-        shapeId: state.selectedShapeId!,
+        shapeId: shapeId,
       );
       vm.applyOperation(operation, persist: true);
       collaborativeVm.broadcastOperation(operation);
-      return KeyEventResult.handled;
     }
 
-    return KeyEventResult.ignored;
+    return KeyEventResult.handled;
   }
 
   /// Handle Escape key - cancel connecting mode or deselect.
@@ -235,14 +283,9 @@ class KeyboardController {
       return KeyEventResult.handled;
     }
 
-    // Otherwise, deselect current selection
-    if (state.selectedConnectorId != null) {
-      vm.selectConnector(null);
-      return KeyEventResult.handled;
-    }
-
-    if (state.selectedShapeId != null) {
-      vm.selectShape(null);
+    // Clear all selections
+    if (state.hasSelection) {
+      vm.clearSelection();
       return KeyEventResult.handled;
     }
 

@@ -23,6 +23,19 @@ class ShapeInteractionState {
   final Rect initialBounds;
 }
 
+/// Tracks multi-shape interaction during drag operations.
+class MultiShapeInteractionState {
+  const MultiShapeInteractionState({
+    required this.shapeIds,
+    required this.dragStartPosition,
+    required this.initialPositions,
+  });
+
+  final Set<String> shapeIds;
+  final Offset dragStartPosition;
+  final Map<String, Offset> initialPositions;
+}
+
 /// Tracks pan interaction during canvas panning.
 class PanInteractionState {
   const PanInteractionState({
@@ -32,6 +45,13 @@ class PanInteractionState {
 
   final Offset initialPanOffset;
   final Offset dragStartScreenPosition;
+}
+
+/// Tracks marquee selection interaction.
+class SelectionInteractionState {
+  const SelectionInteractionState({required this.dragStartPosition});
+
+  final Offset dragStartPosition;
 }
 
 /// Tracks connector interaction during node dragging.
@@ -65,8 +85,10 @@ class PointerController {
 
   // Interaction state
   ShapeInteractionState? _shapeInteractionState;
+  MultiShapeInteractionState? _multiShapeInteractionState;
   ConnectorInteractionState? _connectorInteractionState;
   PanInteractionState? _panInteractionState;
+  SelectionInteractionState? _selectionInteractionState;
   SystemMouseCursor? _hoverCursor;
 
   /// The current cursor to display based on hover state.
@@ -75,8 +97,10 @@ class PointerController {
   /// Whether any drag operation is in progress.
   bool get isDragging =>
       _shapeInteractionState != null ||
+      _multiShapeInteractionState != null ||
       _connectorInteractionState != null ||
-      _panInteractionState != null;
+      _panInteractionState != null ||
+      _selectionInteractionState != null;
 
   /// The ID of the connector being dragged (if any).
   String? get draggingConnectorId => _connectorInteractionState?.connectorId;
@@ -87,12 +111,19 @@ class PointerController {
   /// Whether connecting mode is active (from state).
   bool isConnecting(CanvasLoaded state) => state.isConnecting;
 
+  /// Check if Command (Mac) or Control (Windows/Linux) is pressed.
+  bool _isModifierPressed() {
+    return HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed;
+  }
+
   // ---------------------------------------------------------------------------
   // Public Event Handlers
   // ---------------------------------------------------------------------------
 
   void handlePointerDown(Offset screenPosition, CanvasLoaded state) {
     final position = vm.toCanvasPosition(screenPosition);
+    final isModifier = _isModifierPressed();
 
     collaborativeVm.broadcastCursor(position);
 
@@ -107,11 +138,11 @@ class PointerController {
       return;
     }
 
-    // Check if clicking on an anchor point of selected shape
-    if (state.selectedShapeId != null) {
+    // Check if clicking on an anchor point of selected shape (single selection only)
+    if (state.selectedShapeIds.length == 1) {
       final anchor = _hitTestAnchor(position, state);
       if (anchor != null) {
-        vm.startConnecting(state.selectedShapeId!, anchor);
+        vm.startConnecting(state.selectedShapeIds.first, anchor);
         return;
       }
     }
@@ -120,16 +151,42 @@ class PointerController {
     final hitResult = vm.getIntentAtPosition(position);
 
     if (hitResult != null) {
+      _clearInteractionStates();
+
+      // Handle modifier key for additive selection
+      if (isModifier) {
+        vm.toggleShapeSelection(hitResult.shapeId);
+        // Don't start drag when toggling selection
+        return;
+      }
+
+      // Check if clicking on an already selected shape (potential multi-drag)
+      if (state.selectedShapeIds.contains(hitResult.shapeId) &&
+          state.selectedShapeIds.length > 1 &&
+          hitResult.intent is MoveIntent) {
+        // Start multi-shape drag
+        final initialPositions = <String, Offset>{};
+        for (final shape in state.selectedShapes) {
+          initialPositions[shape.id] = shape.bounds.topLeft;
+        }
+
+        _multiShapeInteractionState = MultiShapeInteractionState(
+          shapeIds: state.selectedShapeIds,
+          dragStartPosition: position,
+          initialPositions: initialPositions,
+        );
+        return;
+      }
+
+      // Single shape interaction
       _shapeInteractionState = ShapeInteractionState(
         shapeId: hitResult.shapeId,
         intent: hitResult.intent,
         dragStartPosition: position,
         initialBounds: hitResult.bounds,
       );
-      _connectorInteractionState = null;
-      _panInteractionState = null;
 
-      // Select the shape
+      // Select the shape (replaces selection)
       vm.selectShape(hitResult.shapeId);
       return;
     }
@@ -137,8 +194,13 @@ class PointerController {
     // Hit test connectors using the intent pattern
     final connectorHit = vm.getConnectorIntentAtPosition(position);
     if (connectorHit != null) {
-      _shapeInteractionState = null;
-      _panInteractionState = null;
+      _clearInteractionStates();
+
+      // Handle modifier key for additive selection
+      if (isModifier) {
+        vm.toggleConnectorSelection(connectorHit.connectorId);
+        return;
+      }
 
       // Handle connector interaction based on intent
       switch (connectorHit.intent) {
@@ -161,12 +223,7 @@ class PointerController {
     }
 
     // Clicked on empty space
-    _shapeInteractionState = null;
-    _connectorInteractionState = null;
-
-    // Always deselect when clicking on empty space
-    vm.selectShape(null);
-    vm.selectConnector(null);
+    _clearInteractionStates();
 
     // If a tool is selected, create shape and clear tool (one-shot behavior)
     if (state.currentTool != null) {
@@ -174,11 +231,24 @@ class PointerController {
       return;
     }
 
-    // No tool selected — start panning
-    _panInteractionState = PanInteractionState(
-      initialPanOffset: state.panOffset,
-      dragStartScreenPosition: screenPosition,
+    // Clear selection only if modifier not pressed
+    if (!isModifier) {
+      vm.clearSelection();
+    }
+
+    // Start marquee selection instead of panning
+    _selectionInteractionState = SelectionInteractionState(
+      dragStartPosition: position,
     );
+  }
+
+  /// Clear all interaction states.
+  void _clearInteractionStates() {
+    _shapeInteractionState = null;
+    _multiShapeInteractionState = null;
+    _connectorInteractionState = null;
+    _panInteractionState = null;
+    _selectionInteractionState = null;
   }
 
   void handlePointerMove(Offset screenPosition, CanvasLoaded state) {
@@ -196,6 +266,14 @@ class PointerController {
       );
       vm.applyOperation(operation, persist: true);
       collaborativeVm.broadcastOperation(operation);
+      return;
+    }
+
+    // Handle marquee selection
+    if (_selectionInteractionState != null) {
+      final startPos = _selectionInteractionState!.dragStartPosition;
+      final selectionRect = Rect.fromPoints(startPos, position);
+      vm.updateSelectionRect(selectionRect);
       return;
     }
 
@@ -221,7 +299,28 @@ class PointerController {
       return;
     }
 
-    // Handle shape interaction
+    // Handle multi-shape dragging
+    if (_multiShapeInteractionState != null) {
+      final totalDelta =
+          position - _multiShapeInteractionState!.dragStartPosition;
+
+      for (final shapeId in _multiShapeInteractionState!.shapeIds) {
+        final initialPos =
+            _multiShapeInteractionState!.initialPositions[shapeId];
+        if (initialPos == null) continue;
+
+        final operation = MoveShapeCanvasOperation(
+          opId: const Uuid().v4(),
+          shapeId: shapeId,
+          position: initialPos + totalDelta,
+        );
+        vm.applyOperation(operation, persist: true);
+        collaborativeVm.broadcastOperation(operation);
+      }
+      return;
+    }
+
+    // Handle single shape interaction
     if (_shapeInteractionState == null) {
       return;
     }
@@ -243,6 +342,21 @@ class PointerController {
   }
 
   void handlePointerUp(Offset screenPosition, CanvasLoaded state) {
+    final position = vm.toCanvasPosition(screenPosition);
+
+    // Finalize marquee selection
+    if (_selectionInteractionState != null) {
+      final startPos = _selectionInteractionState!.dragStartPosition;
+      final selectionRect = Rect.fromPoints(startPos, position);
+
+      // Only select if the rect is large enough (avoid accidental clicks)
+      if (selectionRect.width > 5 || selectionRect.height > 5) {
+        vm.selectItemsInRect(selectionRect);
+      } else {
+        vm.clearSelectionRect();
+      }
+    }
+
     // Finalize connector node movement if dragging
     if (_connectorInteractionState != null) {
       final operation = vm.finalizeConnectorNodeMove(
@@ -254,9 +368,7 @@ class PointerController {
       }
     }
 
-    _shapeInteractionState = null;
-    _connectorInteractionState = null;
-    _panInteractionState = null;
+    _clearInteractionStates();
   }
 
   void handlePointerHover(Offset screenPosition, CanvasLoaded state) {

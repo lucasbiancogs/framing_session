@@ -10,24 +10,27 @@ import '../models/canvas_shape.dart';
 ///
 /// The painter receives:
 /// - All shapes to render (domain entities)
-/// - The currently selected shape ID
+/// - The currently selected shape IDs (supports multiselect)
 /// - Pan offset and zoom (for viewport transforms)
+/// - Selection rectangle for marquee selection
 ///
 /// Architecture principle: Canvas handles rendering, shapes own geometry.
 class WhiteboardPainter extends CustomPainter {
   WhiteboardPainter({
     required this.shapes,
-    this.selectedShapeId,
+    this.selectedShapeIds = const {},
     required this.gridSize,
     required this.isEditingText,
+    this.selectionRect,
     this.panOffset = Offset.zero,
     this.zoom = 1.0,
     this.showGrid = true,
   });
 
   final List<CanvasShape> shapes;
-  final String? selectedShapeId;
+  final Set<String> selectedShapeIds;
   final bool isEditingText;
+  final Rect? selectionRect;
   final Offset panOffset;
   final double zoom;
   final bool showGrid;
@@ -46,9 +49,10 @@ class WhiteboardPainter extends CustomPainter {
     }
 
     for (final shape in shapes) {
-      final isSelected = shape.id == selectedShapeId;
-      // Only the selected shape can be in text editing mode
-      final isShapeEditingText = isSelected && isEditingText;
+      final isSelected = selectedShapeIds.contains(shape.id);
+      // Only the selected shape can be in text editing mode (single selection)
+      final isShapeEditingText =
+          isSelected && selectedShapeIds.length == 1 && isEditingText;
 
       shape.paint(
         canvas,
@@ -61,7 +65,26 @@ class WhiteboardPainter extends CustomPainter {
       }
     }
 
+    // Draw selection rectangle (marquee)
+    if (selectionRect != null) {
+      _paintSelectionRect(canvas);
+    }
+
     canvas.restore();
+  }
+
+  void _paintSelectionRect(Canvas canvas) {
+    final fillPaint = Paint()
+      ..color = Colors.blue.withValues(alpha: 0.1)
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = Colors.blue.withValues(alpha: 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    canvas.drawRect(selectionRect!, fillPaint);
+    canvas.drawRect(selectionRect!, borderPaint);
   }
 
   void _paintGrid(Canvas canvas, Size size) {
@@ -89,8 +112,9 @@ class WhiteboardPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant WhiteboardPainter oldDelegate) {
     return shapes != oldDelegate.shapes ||
-        selectedShapeId != oldDelegate.selectedShapeId ||
+        selectedShapeIds != oldDelegate.selectedShapeIds ||
         isEditingText != oldDelegate.isEditingText ||
+        selectionRect != oldDelegate.selectionRect ||
         panOffset != oldDelegate.panOffset ||
         zoom != oldDelegate.zoom ||
         showGrid != oldDelegate.showGrid ||

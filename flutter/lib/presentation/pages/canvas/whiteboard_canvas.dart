@@ -163,8 +163,8 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
                   painter: ConnectorsPainter(
                     connectors: state.connectors,
                     shapes: state.shapes,
-                    selectedConnectorId: state.selectedConnectorId,
-                    selectedShapeId: state.selectedShapeId,
+                    selectedConnectorIds: state.selectedConnectorIds,
+                    selectedShapeIds: state.selectedShapeIds,
                     draggingConnectorId: _pointerController.draggingConnectorId,
                     draggingNodeIndex: _pointerController.draggingNodeIndex,
                     isConnecting: state.isConnecting,
@@ -181,8 +181,9 @@ class _WhiteboardCanvasState extends ConsumerState<WhiteboardCanvas> {
                 CustomPaint(
                   painter: WhiteboardPainter(
                     shapes: state.shapes,
-                    selectedShapeId: state.selectedShapeId,
+                    selectedShapeIds: state.selectedShapeIds,
                     isEditingText: state.isEditingText,
+                    selectionRect: state.selectionRect,
                     panOffset: state.panOffset,
                     zoom: state.zoom,
                     gridSize: vm.gridSize,
